@@ -11,11 +11,11 @@
   button:hover{background:#e8eaed}
   #status{font-size:11px;color:#666;padding:5px 8px;min-height:15px;word-break:break-word}
   #stage{position:relative;padding-top:56.25%;background:#000;display:none;overflow:hidden}
-  #stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  #stage iframe,#stage video{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
   #stage.theater{position:fixed;inset:0;padding-top:0;z-index:99}
-  #stage.theater iframe{position:absolute;inset:0}
+  #stage.theater iframe,#stage.theater video{position:absolute;inset:0}
   #stage:fullscreen{padding-top:0}
-  #stage:fullscreen iframe{position:absolute;inset:0}
+  #stage:fullscreen iframe,#stage:fullscreen video{position:absolute;inset:0}
   .fail{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;
         align-items:center;justify-content:center;color:#eee;font-size:13px;text-align:center;padding:20px}
   #bar{display:none;gap:6px;padding:6px 8px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap;background:#fafafa}
@@ -34,13 +34,13 @@
   h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5f6368;margin:8px 8px 4px}
   pre{font-size:11px;white-space:pre-wrap;background:#f5f5f5;border:1px solid #e0e0e0;
       border-radius:4px;margin:6px 8px;padding:8px;max-height:150px;overflow:auto}
+  .lbl{font-size:11px;color:#5f6368;align-self:center}
 </style>
 </head>
 <body>
 <header>
   <input id="q" type="text" placeholder="Search, or paste a video / shorts URL">
   <button id="go">Search</button>
-  <select id="src"><option value="auto">Auto source</option></select>
   <button id="diagBtn" title="Test connections">?</button>
 </header>
 <div id="status">Ready.</div>
@@ -48,10 +48,25 @@
 <div id="bar">
   <button id="full">Fullscreen</button>
   <button id="theater">Theater</button>
-  <button id="next">Next source</button>
+  <button id="retry">Retry</button>
+  <button id="next">Other domain</button>
+  <button id="stream">Stream</button>
   <button id="pop">Pop out</button>
   <button id="save">Save</button>
   <button id="copy">Copy link</button>
+  <span class="lbl">Region</span>
+  <select id="gl">
+    <option value="US">US</option>
+    <option value="GB">UK</option>
+    <option value="CA">Canada</option>
+    <option value="AU">Australia</option>
+    <option value="">Auto</option>
+  </select>
+  <span class="lbl">Quality</span>
+  <select id="itag">
+    <option value="18">360p</option>
+    <option value="22">720p</option>
+  </select>
 </div>
 <h2>Saved</h2>
 <div class="chips" id="saved"></div>
@@ -60,16 +75,19 @@
 <pre id="diagOut" style="display:none"></pre>
 <div id="results"></div>
 <script>
-const SOURCES = [
-  {n: 'Piped',         u: id => 'https://piped.video/embed/' + id + '?autoplay=1'},
-  {n: 'Invidious A',   u: id => 'https://inv.nadeko.net/embed/' + id + '?autoplay=1'},
-  {n: 'Invidious B',   u: id => 'https://invidious.nerdvpn.de/embed/' + id + '?autoplay=1'},
-  {n: 'Yewtu.be',      u: id => 'https://yewtu.be/embed/' + id + '?autoplay=1'},
-  {n: 'No-cookie',     u: id => 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0&modestbranding=1'},
-  {n: 'YouTube',       u: id => 'https://www.youtube.com/embed/' + id + '?autoplay=1&rel=0'}
+const DOMAINS = [
+  {n: 'No-cookie', host: 'https://www.youtube-nocookie.com/embed/'},
+  {n: 'YouTube',   host: 'https://www.youtube.com/embed/'}
 ];
 
-/* public InnerTube key — same one youtube.com ships in its own pages */
+/* stream fallback — serves the media file, so 151 videos still play */
+const STREAM = [
+  'https://inv.nadeko.net/latest_version',
+  'https://invidious.nerdvpn.de/latest_version',
+  'https://yewtu.be/latest_version',
+  'https://inv.tux.pizza/latest_version'
+];
+
 const YT_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 const CLIENTS = [
   {clientName: 'WEB', clientVersion: '2.20241126.01.00', hl: 'en', gl: 'US'},
@@ -102,7 +120,6 @@ function collect(node, out) {
   for (const k in node) if (node[k] && typeof node[k] === 'object') collect(node[k], out);
 }
 
-/* text/plain keeps it a simple request — no CORS preflight */
 async function searchHere(q) {
   for (const c of CLIENTS) {
     try {
@@ -141,17 +158,26 @@ const statusEl = document.getElementById('status');
 const stage = document.getElementById('stage');
 const results = document.getElementById('results');
 const bar = document.getElementById('bar');
-const srcSel = document.getElementById('src');
+const glSel = document.getElementById('gl');
+const itagSel = document.getElementById('itag');
 const diagOut = document.getElementById('diagOut');
 
-let cur = null, idx = 0, timer = null, locked = false;
+let cur = null, mode = 'embed', dIdx = 0, sIdx = 0, itag = '18', timer = null;
 
-SOURCES.forEach((s, i) => {
-  const o = document.createElement('option');
-  o.value = String(i); o.textContent = s.n;
-  srcSel.appendChild(o);
-});
-srcSel.value = 'auto';
+glSel.value = localStorage.getItem('su_gl') || 'US';
+itag = localStorage.getItem('su_itag') || '18';
+itagSel.value = itag;
+
+glSel.onchange = () => {
+  localStorage.setItem('su_gl', glSel.value);
+  if (cur) load();
+};
+itagSel.onchange = () => {
+  itag = itagSel.value;
+  localStorage.setItem('su_itag', itag);
+  sIdx = 0;
+  if (cur && mode === 'stream') loadStream();
+};
 
 const status = t => statusEl.textContent = t;
 
@@ -161,9 +187,28 @@ function vidOf(x) {
   return /^[A-Za-z0-9_-]{11}$/.test(x) ? x : null;
 }
 
+function buildUrl(id, domainIdx) {
+  const p = new URLSearchParams({
+    autoplay: '1',
+    rel: '0',
+    modestbranding: '1',
+    playsinline: '1',
+    iv_load_policy: '3',
+    fs: '1',
+    hl: 'en',
+    enablejsapi: '1'
+  });
+  const gl = localStorage.getItem('su_gl');
+  if (gl) p.set('gl', gl);
+  if (/^https?:/.test(location.origin)) p.set('origin', location.origin);
+  p.set('t', String(Date.now() % 100000));
+  return DOMAINS[domainIdx].host + id + '?' + p.toString();
+}
+
 function play(id, title) {
   cur = {id: id, title: title || ''};
-  idx = 0;
+  mode = 'embed';
+  dIdx = 0;
   results.innerHTML = '';
   stage.style.display = 'block';
   bar.classList.add('show');
@@ -173,29 +218,94 @@ function play(id, title) {
 
 function load() {
   clearTimeout(timer);
-  if (idx >= SOURCES.length) {
-    stage.innerHTML = '<div class="fail"><span>Every source failed for this video.</span>' +
-      '<button onclick="popout()">Open in a new tab</button></div>';
-    status('All sources failed.');
-    return;
-  }
-  const s = SOURCES[idx];
+  if (!cur) return;
+  if (mode === 'stream') return loadStream();
+
+  const d = DOMAINS[dIdx];
   stage.innerHTML = '';
   const f = document.createElement('iframe');
-  f.src = s.u(cur.id);
+  f.src = buildUrl(cur.id, dIdx);
   f.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
   f.setAttribute('allowfullscreen', '');
-  f.onload = () => { clearTimeout(timer); status('Playing via ' + s.n); };
+  f.onload = () => {
+    clearTimeout(timer);
+    status('Playing via ' + d.n + '. Error 151 or blank? It switches to the stream by itself.');
+  };
   stage.appendChild(f);
-  status('Loading via ' + s.n + '\u2026');
-  timer = setTimeout(() => { if (!locked) { idx++; load(); } }, 6500);
+  status('Loading via ' + d.n + '\u2026');
+
+  timer = setTimeout(() => {
+    if (dIdx === 0) { dIdx = 1; load(); }
+    else status('Still nothing. Try Stream, another Region, or Pop out.');
+  }, 9000);
+}
+
+function startStream(reason) {
+  mode = 'stream';
+  sIdx = 0;
+  status((reason ? reason + ' \u2014 ' : '') + 'switched to direct stream');
+  loadStream();
+}
+
+function loadStream() {
+  clearTimeout(timer);
+  if (!cur) return;
+
+  if (sIdx >= STREAM.length) {
+    if (itag !== '18') {
+      itag = '18';
+      itagSel.value = '18';
+      sIdx = 0;
+      return loadStream();
+    }
+    stage.innerHTML = '<div class="fail"><span>No stream instance answered.</span>' +
+      '<button onclick="popout()">Open in a new tab</button></div>';
+    status('Stream fallback exhausted. Try Pop out.');
+    return;
+  }
+
+  const host = STREAM[sIdx];
+  const gl = localStorage.getItem('su_gl');
+  const url = host + '?id=' + encodeURIComponent(cur.id) + '&itag=' + itag + '&local=true' +
+    (gl ? '&region=' + gl : '');
+
+  stage.innerHTML = '';
+  const v = document.createElement('video');
+  v.controls = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.src = url;
+  v.onerror = () => { sIdx++; loadStream(); };
+  v.onloadedmetadata = () => {
+    status('Direct stream via ' + host.split('/')[2] + ' (' + itag + '). ' +
+      'No captions or quality menu here.');
+  };
+  stage.appendChild(v);
+  status('Stream ' + (sIdx + 1) + '/' + STREAM.length + '\u2026');
 }
 
 function popout() {
   if (!cur) return;
-  window.open(SOURCES[Math.min(idx, SOURCES.length - 1)].u(cur.id).replace('&autoplay=1', ''),
-    '_blank', 'noopener');
+  const url = mode === 'stream'
+    ? STREAM[0] + '?id=' + encodeURIComponent(cur.id) + '&itag=' + itag
+    : buildUrl(cur.id, dIdx);
+  window.open(url, '_blank', 'noopener');
 }
+
+/* catch 101 / 150 / 151 from the player itself */
+window.addEventListener('message', e => {
+  if (!/youtube(-nocookie)?\.com$/.test(String(e.origin).replace(/^https?:\/\//, ''))) return;
+  let d;
+  try { d = JSON.parse(e.data); } catch (err) { return; }
+  if (!d || d.event !== 'onError') return;
+  if (d.info === 101 || d.info === 150 || d.info === 151) {
+    startStream('Embedding disabled (error ' + d.info + ')');
+  } else if (d.info === 100) {
+    status('Video is private or removed.');
+  } else if (d.info === 2) {
+    status('Bad video id.');
+  }
+});
 
 function card(v) {
   const d = document.createElement('div');
@@ -243,7 +353,6 @@ function pushRecent(v) {
   paintChips('su_recent', document.getElementById('recent'));
 }
 
-/* server (retried) → browser → message */
 document.getElementById('go').onclick = async () => {
   const raw = document.getElementById('q').value.trim();
   if (!raw) return;
@@ -261,14 +370,9 @@ document.getElementById('go').onclick = async () => {
   if (local.length) { render(local); return; }
 
   if (res && res.err) {
-    if (/permission|storage/i.test(res.err)) {
-      status('Server link down (' + res.err + '). Browser search also blocked. ' +
-        'Run Updates \u2192 Toggle page source to files, reopen, retry.');
-    } else {
-      status('Search failed: ' + res.err);
-    }
+    status('Search failed: ' + res.err + ' — hit ? for diagnostics.');
   } else {
-    status('No results from either path. Paste a direct link, or hit ? for diagnostics.');
+    status('No results from either path. Paste a direct link instead.');
   }
 };
 
@@ -302,7 +406,13 @@ document.getElementById('full').onclick = () => {
 };
 
 document.getElementById('theater').onclick = () => stage.classList.toggle('theater');
-document.getElementById('next').onclick = () => { idx++; load(); };
+document.getElementById('retry').onclick = () => load();
+document.getElementById('stream').onclick = () => { sIdx = 0; startStream('Manual'); };
+document.getElementById('next').onclick = () => {
+  if (mode === 'stream') { sIdx++; loadStream(); return; }
+  dIdx = dIdx === 0 ? 1 : 0;
+  load();
+};
 document.getElementById('pop').onclick = popout;
 
 document.getElementById('save').onclick = () => {
@@ -322,18 +432,5 @@ document.getElementById('copy').onclick = () => {
     .catch(() => status(url));
 };
 
-srcSel.onchange = () => {
-  if (srcSel.value === 'auto') { locked = false; return; }
-  locked = true;
-  idx = Number(srcSel.value);
-  if (cur) load();
-};
-
 paintChips('su_saved', document.getElementById('saved'));
 paintChips('su_recent', document.getElementById('recent'));
-</script>
-</body>
-</html>
-</script>
-</body>
-</html>
