@@ -58,7 +58,7 @@ window.onerror = function (m, s, l) {
   <button id="full">Fullscreen</button>
   <button id="theater">Theater</button>
   <button id="retry">Retry</button>
-  <button id="next">Other domain</button>
+  <button id="next">Next source</button>
   <button id="stream">Stream</button>
   <button id="pop">Pop out</button>
   <button id="save">Save</button>
@@ -112,7 +112,7 @@ const glSel = el('gl');
 const itagSel = el('itag');
 const diagOut = el('diagOut');
 
-let cur = null, mode = 'embed', dIdx = 0, sIdx = 0, itag = '18', timer = null;
+let cur = null, mode = 'embed', dIdx = 0, itag = '18', timer = null;
 
 function status(t, bad) {
   if (!statusEl) return;
@@ -187,6 +187,15 @@ function serverSearch(q) {
   });
 }
 
+function serverStreams(id) {
+  return new Promise(resolve => {
+    google.script.run
+      .withSuccessHandler(u => resolve(Array.isArray(u) ? u : []))
+      .withFailureHandler(() => resolve([]))
+      .streamUrls(id);
+  });
+}
+
 function vidOf(x) {
   const m = x.match(/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
   if (m) return m[1];
@@ -229,57 +238,73 @@ function load() {
   f.setAttribute('allowfullscreen', '');
   f.onload = () => {
     clearTimeout(timer);
-    status('Playing via ' + d.n + '. A 151 will switch to the stream on its own.');
+    status('Playing via ' + d.n + '. A 151 switches to the stream on its own.');
   };
   stage.appendChild(f);
   status('Loading via ' + d.n + '\u2026');
 
   timer = setTimeout(() => {
     if (dIdx === 0) { dIdx = 1; load(); }
-    else status('Still nothing. Try Stream, another Region, or Pop out.');
+    else status('Still nothing. Tap Stream, change Region, or Pop out.');
   }, 9000);
 }
 
 function startStream(reason) {
   mode = 'stream';
-  sIdx = 0;
-  status((reason ? reason + ' \u2014 ' : '') + 'switched to direct stream');
+  status((reason ? reason + ' \u2014 ' : '') + 'getting stream\u2026');
   loadStream();
 }
 
-function loadStream() {
+async function loadStream() {
   clearTimeout(timer);
   if (!cur) return;
 
-  if (sIdx >= STREAM.length) {
-    if (itag !== '18') {
-      itag = '18';
-      if (itagSel) itagSel.value = '18';
-      sIdx = 0;
-      return loadStream();
-    }
-    stage.innerHTML = '<div class="fail"><span>No stream instance answered.</span>' +
-      '<button id="failPop">Open in a new tab</button></div>';
-    on('failPop', 'click', popout);
-    status('Stream fallback exhausted. Try Pop out.');
-    return;
-  }
-
-  const host = STREAM[sIdx];
-  const gl = localStorage.getItem('su_gl');
-  const url = host + '?id=' + encodeURIComponent(cur.id) + '&itag=' + itag + '&local=true' +
-    (gl ? '&region=' + gl : '');
+  const gl = localStorage.getItem('su_gl') || 'US';
 
   stage.innerHTML = '';
   const v = document.createElement('video');
   v.controls = true;
-  v.autoplay = true;
   v.playsInline = true;
-  v.src = url;
-  v.onerror = () => { sIdx++; loadStream(); };
-  v.onloadedmetadata = () => status('Direct stream via ' + host.split('/')[2] + ' (' + itag + ').');
+  v.setAttribute('playsinline', '');
+  v.setAttribute('webkit-playsinline', '');
   stage.appendChild(v);
-  status('Stream ' + (sIdx + 1) + '/' + STREAM.length + '\u2026');
+
+  status('Getting stream\u2026');
+
+  const direct = await serverStreams(cur.id);
+  const proxied = STREAM.map(h =>
+    h + '?id=' + encodeURIComponent(cur.id) + '&itag=' + itag + '&local=true&region=' + gl
+  );
+  const urls = direct.concat(proxied);
+
+  if (!urls.length) {
+    stage.innerHTML = '<div class="fail"><span>No stream available.</span>' +
+      '<button id="failPop">Open in a new tab</button></div>';
+    on('failPop', 'click', popout);
+    status('Stream lookup returned nothing. Try Pop out.', true);
+    return;
+  }
+
+  let i = 0;
+  const next = () => {
+    if (i >= urls.length) {
+      stage.innerHTML = '<div class="fail"><span>All ' + urls.length + ' stream sources failed.</span>' +
+        '<button id="failPop">Open in a new tab</button></div>';
+      on('failPop', 'click', popout);
+      status('Stream fallback exhausted. Tap Pop out.', true);
+      return;
+    }
+    v.src = urls[i];
+    i++;
+    status('Source ' + i + '/' + urls.length + '\u2026');
+    v.load();
+    const p = v.play();
+    if (p && p.catch) p.catch(() => { v.muted = true; v.play().catch(() => {}); });
+  };
+
+  v.onerror = next;
+  v.onloadedmetadata = () => status('Direct stream playing. No captions or quality menu here.');
+  next();
 }
 
 function popout() {
@@ -386,9 +411,9 @@ on('full', 'click', () => {
 
 on('theater', 'click', () => stage.classList.toggle('theater'));
 on('retry', 'click', () => load());
-on('stream', 'click', () => { sIdx = 0; startStream('Manual'); });
+on('stream', 'click', () => startStream('Manual'));
 on('next', 'click', () => {
-  if (mode === 'stream') { sIdx++; loadStream(); return; }
+  if (mode === 'stream') { loadStream(); return; }
   dIdx = dIdx === 0 ? 1 : 0;
   load();
 });
@@ -419,7 +444,6 @@ on('gl', 'change', () => {
 on('itag', 'change', () => {
   itag = itagSel.value;
   localStorage.setItem('su_itag', itag);
-  sIdx = 0;
   if (cur && mode === 'stream') loadStream();
 });
 
@@ -456,6 +480,3 @@ try {
 </script>
 </body>
 </html>
-
-paintChips('su_saved', document.getElementById('saved'));
-paintChips('su_recent', document.getElementById('recent'));
