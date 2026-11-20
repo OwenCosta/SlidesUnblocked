@@ -1,4 +1,9 @@
 <!DOCTYPE html>
+<!--
+  Slides Unblocked — Watch
+  Owned by OwenCosta — https://github.com/OwenCosta/SlidesUnblocked
+  MIT License, Copyright (c) 2026 OwenCosta
+-->
 <html>
 <head><base target="_top">
 <script>
@@ -33,6 +38,7 @@ window.onerror = function (m, s, l) {
   h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5f6368;margin:8px 8px 4px}
   pre{font-size:11px;white-space:pre-wrap;background:#f5f5f5;border:1px solid #e0e0e0;
       border-radius:4px;margin:6px 8px;padding:8px;max-height:150px;overflow:auto}
+  .credit{font-size:10px;color:#80868b;padding:0 8px 8px}
 </style>
 </head>
 <body>
@@ -48,6 +54,7 @@ window.onerror = function (m, s, l) {
 <div class="chips" id="recent"></div>
 <pre id="diagOut" style="display:none"></pre>
 <div id="results"></div>
+<div class="credit">Slides Unblocked · OwenCosta · github.com/OwenCosta/SlidesUnblocked</div>
 <script>
 const YT_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 const CLIENTS = [
@@ -136,28 +143,39 @@ function serverSearch(q) {
   });
 }
 
+/* insert retried — the channel is often cold on the first call */
+function serverPlay(id, title) {
+  return new Promise(resolve => {
+    let tries = 0;
+    const run = () => {
+      tries++;
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err => {
+          if (tries < 4) { setTimeout(run, 500); return; }
+          resolve({ ok: false, msg: (err && err.message ? err.message : String(err)) + ' (4 tries)' });
+        })
+        .playVideo(id, title);
+    };
+    run();
+  });
+}
+
 function vidOf(x) {
   const m = x.match(/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
   if (m) return m[1];
   return /^[A-Za-z0-9_-]{11}$/.test(x) ? x : null;
 }
 
-/* result → id → player slide → jump → close */
-function play(v) {
+async function play(v) {
   say('Putting "' + (v.title || v.id) + '" on the player slide…');
-  google.script.run
-    .withSuccessHandler(r => {
-      if (r && r.ok) {
-        say('Playing on slide ' + r.n + '. Hit present.');
-        setTimeout(() => { try { google.script.host.close(); } catch (e) {} }, 700);
-      } else {
-        say('Insert failed: ' + ((r && r.msg) || 'unknown'), true);
-      }
-    })
-    .withFailureHandler(err => {
-      say('Insert failed: ' + (err && err.message ? err.message : err), true);
-    })
-    .playVideo(v.id, v.title || '');
+  const r = await serverPlay(v.id, v.title || '');
+  if (r && r.ok) {
+    say('Playing on slide ' + r.n + '. Hit present.');
+    setTimeout(() => { try { google.script.host.close(); } catch (e) {} }, 700);
+  } else {
+    say('Insert failed: ' + ((r && r.msg) || 'unknown') + ' — reopen the dialog and retry.', true);
+  }
 }
 
 function playTracked(v) {
@@ -255,7 +273,7 @@ bind('diagBtn', 'click', async () => {
   }
 });
 
-/* boot + self-test */
+/* boot: warm the channel, then self-test search */
 try {
   const need = ['q','go','status','results','saved','recent','diagOut','diagBtn'];
   const missing = need.filter(id => !byId(id));
@@ -265,6 +283,11 @@ try {
     paintChips('su_saved', byId('saved'));
     paintChips('su_recent', byId('recent'));
     byId('q').focus();
+
+    google.script.run
+      .withSuccessHandler(() => {})
+      .withFailureHandler(() => {})
+      .ping();
 
     (async () => {
       const probe = await searchHere('music');
