@@ -1,6 +1,6 @@
 /**
  * Slides Unblocked
- * Owned by OwenCosta — https://github.com/OwenCosta/Unblocked-Slides
+ * Owned by OwenCosta — https://github.com/OwenCosta/SlidesUnblocked
  *
  * MIT License — Copyright (c) 2026 OwenCosta
  *
@@ -20,7 +20,7 @@
 
 const DEFAULT_REPO = {
   owner:  'OwenCosta',
-  repo:   'Unblocked-Slides',
+  repo:   'SlidesUnblocked',
   branch: 'main',
   path:   ''
 };
@@ -157,7 +157,7 @@ function resetRepo() {
 }
 
 function menuReset() {
-  SlidesApp.getUi().alert('Back to OwenCosta/Unblocked-Slides\n\n' + resetRepo().join('\n'));
+  SlidesApp.getUi().alert('Back to OwenCosta/SlidesUnblocked\n\n' + resetRepo().join('\n'));
 }
 
 /* ---------------- chunked cache ---------------- */
