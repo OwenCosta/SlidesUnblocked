@@ -1,16 +1,26 @@
+<!DOCTYPE html>
 <!--
-  Slides Unblocked — Owned by OwenCosta
-  https://github.com/OwenCosta/SlidesUnblocked
+  Slides Unblocked — Games
+  Owned by OwenCosta — https://github.com/OwenCosta/SlidesUnblocked
   MIT License, Copyright (c) 2026 OwenCosta
 -->
-<!DOCTYPE html>
 <html>
 <head><base target="_top">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<script>
+window.onerror = function (m, s, l) {
+  var e = document.getElementById('err');
+  if (e) {
+    e.style.display = 'block';
+    e.textContent = 'Script error: ' + m + ' (line ' + l + ') — paste likely truncated';
+  }
+};
+</script>
 <style>
   *{box-sizing:border-box}
   body{margin:0;font:13px system-ui,-apple-system,sans-serif;background:#fafafa;color:#202124;
        display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  #err{display:none;background:#fce8e6;color:#c62828;font-size:11px;padding:6px 8px;
+       border-bottom:1px solid #f5c6c2;word-break:break-word}
   header{display:flex;gap:8px;align-items:center;justify-content:space-between;
          padding:8px;border-bottom:1px solid #ddd;flex-wrap:wrap}
   .tabs{display:flex;gap:6px;flex-wrap:wrap}
@@ -45,9 +55,11 @@
   #pad.show{display:grid}
   #pad button{font-size:16px;touch-action:manipulation}
   #hint{font-size:11px;color:#5f6368;text-align:center;padding:0 8px 6px}
+  .credit{font-size:10px;color:#80868b;text-align:center;padding:0 8px 8px}
 </style>
 </head>
 <body>
+<div id="err"></div>
 <header>
   <div class="tabs">
     <button data-g="2048">2048</button>
@@ -70,20 +82,26 @@
   <button data-k="ArrowLeft">◀</button><span></span><button data-k="ArrowRight">▶</button>
   <span></span><button data-k="ArrowDown">▼</button><span></span>
 </div>
-<div id="hint">Arrows / WASD. <b>n</b> new · <b>p</b> pause · 2048: <b>z</b> undo · snake: <b>x</b> wrap · mines: <b>f</b> flag mode</div>
+<div id="hint">Arrows / WASD · <b>n</b> new · <b>p</b> pause · 2048: <b>z</b> undo · snake: <b>x</b> wrap · mines: <b>f</b> flag</div>
+<div class="credit">Slides Unblocked · OwenCosta · github.com/OwenCosta/SlidesUnblocked</div>
 <script>
-const START = '<?= startMode ?>';
-const mount = document.getElementById('mount');
-const statEl = document.getElementById('stat');
-const overlay = document.getElementById('overlay');
-const ovtext = document.getElementById('ovtext');
+const RAW = '<?= startMode ?>';
+
+const byId = id => document.getElementById(id);
+const mount = byId('mount');
+const statEl = byId('stat');
+const overlay = byId('overlay');
+const ovtext = byId('ovtext');
 
 let game = null, gameName = '2048', paused = false;
 
 const best = {
-  get: n => Number(localStorage.getItem('su_b_' + n) || 0),
-  set: (n, v) => { if (v > best.get(n)) localStorage.setItem('su_b_' + n, v); }
+  get: n => { try { return Number(localStorage.getItem('su_b_' + n) || 0); } catch (e) { return 0; } },
+  set: (n, v) => {
+    try { if (v > best.get(n)) localStorage.setItem('su_b_' + n, String(v)); } catch (e) {}
+  }
 };
+
 function hud(v) { statEl.textContent = v + ' · best ' + best.get(gameName); }
 function finish(t) { ovtext.textContent = t; overlay.classList.add('show'); }
 function hideOverlay() { overlay.classList.remove('show'); }
@@ -93,20 +111,31 @@ const G2048 = {
   cols: {2:'#eee4da',4:'#ede0c8',8:'#f2b179',16:'#f59563',32:'#f67c5f',64:'#f65e3b',
          128:'#edcf72',256:'#edcc61',512:'#edc850',1024:'#edc53f',2048:'#edc22e'},
   start() {
-    this.b = Array(16).fill(0); this.score = 0; this.over = false; this.won = false; this.prev = null;
-    hideOverlay(); mount.innerHTML = '<div class="grid4"></div>';
+    this.b = Array(16).fill(0);
+    this.score = 0;
+    this.over = false;
+    this.won = false;
+    this.prev = null;
+    this.newIdx = -1;
+    hideOverlay();
+    mount.innerHTML = '<div class="grid4"></div>';
     this.grid = mount.firstChild;
-    this.add(); this.add(); this.paint(); hud(0);
+    this.add();
+    this.add();
+    this.paint();
+    hud(0);
   },
   add() {
-    const free = this.b.map((v, i) => v ? -1 : i).filter(i => i >= 0);
+    const free = [];
+    for (let i = 0; i < 16; i++) if (!this.b[i]) free.push(i);
     if (!free.length) return;
     this.newIdx = free[Math.floor(Math.random() * free.length)];
     this.b[this.newIdx] = Math.random() < 0.9 ? 2 : 4;
   },
   paint() {
     this.grid.innerHTML = '';
-    this.b.forEach((v, i) => {
+    for (let i = 0; i < 16; i++) {
+      const v = this.b[i];
       const d = document.createElement('div');
       d.className = 't' + (i === this.newIdx ? ' pop' : '');
       if (v) {
@@ -115,55 +144,84 @@ const G2048 = {
         d.style.color = v > 4 ? '#f9f6f2' : '#776e65';
       }
       this.grid.appendChild(d);
-    });
+    }
     this.newIdx = -1;
   },
   slide(line) {
-    const f = line.filter(v => v); let gained = 0;
-    for (let i = 0; i < f.length - 1; i++)
-      if (f[i] === f[i + 1]) { f[i] *= 2; gained += f[i]; f.splice(i + 1, 1); }
+    const f = line.filter(v => v);
+    let gained = 0;
+    for (let i = 0; i < f.length - 1; i++) {
+      if (f[i] === f[i + 1]) {
+        f[i] *= 2;
+        gained += f[i];
+        f.splice(i + 1, 1);
+      }
+    }
     while (f.length < 4) f.push(0);
     return [f, gained];
   },
   move(dir) {
     if (this.over) return;
-    const before = this.b.slice(), rows = [];
+    const before = this.b.slice();
+    const rows = [];
+
     for (let r = 0; r < 4; r++) {
       let line = [];
-      for (let c = 0; c < 4; c++) line.push(this.b[(dir === 'l' || dir === 'r') ? r * 4 + c : c * 4 + r]);
+      for (let c = 0; c < 4; c++) {
+        line.push(this.b[(dir === 'l' || dir === 'r') ? r * 4 + c : c * 4 + r]);
+      }
       if (dir === 'r' || dir === 'd') line.reverse();
       const res = this.slide(line);
       if (dir === 'r' || dir === 'd') res[0].reverse();
       this.score += res[1];
       rows.push(res[0]);
     }
+
     const next = Array(16).fill(0);
-    rows.forEach((line, k) => line.forEach((v, j) => {
-      next[(dir === 'l' || dir === 'r') ? k * 4 + j : j * 4 + k] = v;
-    }));
+    for (let k = 0; k < 4; k++) {
+      for (let j = 0; j < 4; j++) {
+        next[(dir === 'l' || dir === 'r') ? k * 4 + j : j * 4 + k] = rows[k][j];
+      }
+    }
+
     if (next.join() === this.b.join()) return;
-    this.prev = before; this.b = next;
+
+    this.prev = before;
+    this.b = next;
     best.set(gameName, this.score);
-    this.add(); this.paint(); hud(this.score);
+    this.add();
+    this.paint();
+    hud(this.score);
+
     if (!this.won && this.b.indexOf(2048) > -1) {
-      this.won = true; finish('2048 reached — keep going');
+      this.won = true;
+      finish('2048 reached — keep going');
       setTimeout(hideOverlay, 1100);
     }
-    if (this.stuck()) { this.over = true; finish('Game over — ' + this.score); }
+    if (this.stuck()) {
+      this.over = true;
+      finish('Game over — ' + this.score);
+    }
   },
   stuck() {
     if (this.b.indexOf(0) > -1) return false;
-    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
-      const v = this.b[r * 4 + c];
-      if (c < 3 && v === this.b[r * 4 + c + 1]) return false;
-      if (r < 3 && v === this.b[(r + 1) * 4 + c]) return false;
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 4; c++) {
+        const v = this.b[r * 4 + c];
+        if (c < 3 && v === this.b[r * 4 + c + 1]) return false;
+        if (r < 3 && v === this.b[(r + 1) * 4 + c]) return false;
+      }
     }
     return true;
   },
   undo() {
     if (!this.prev) return;
-    this.b = this.prev; this.prev = null; this.over = false;
-    hideOverlay(); this.paint(); hud(this.score);
+    this.b = this.prev;
+    this.prev = null;
+    this.over = false;
+    hideOverlay();
+    this.paint();
+    hud(this.score);
   },
   key(e) {
     const m = {ArrowLeft:'l',ArrowRight:'r',ArrowUp:'u',ArrowDown:'d',a:'l',d:'r',w:'u',s:'d'};
@@ -176,52 +234,88 @@ const G2048 = {
 
 /* ---------------- snake ---------------- */
 const GSnake = {
-  N: 20, cell: 18,
+  N: 20,
+  cell: 18,
   start() {
-    hideOverlay(); mount.innerHTML = '<canvas></canvas>';
+    hideOverlay();
+    mount.innerHTML = '<canvas></canvas>';
     this.cv = mount.querySelector('canvas');
-    this.cv.width = this.cv.height = this.N * this.cell;
+    this.cv.width = this.N * this.cell;
+    this.cv.height = this.N * this.cell;
     this.ctx = this.cv.getContext('2d');
-    this.delay = 130; this.reset();
+    this.delay = 130;
+    this.reset();
     this.timer = setInterval(() => this.tick(), this.delay);
   },
   reset() {
-    this.snake = [[9,9],[8,9],[7,9]]; this.dir = [1,0]; this.queue = [];
-    this.score = 0; this.over = false; this.wrap = true;
-    this.place(); hud(0); this.draw();
+    this.snake = [[9,9],[8,9],[7,9]];
+    this.dir = [1,0];
+    this.queue = [];
+    this.score = 0;
+    this.over = false;
+    this.wrap = true;
+    this.place();
+    hud(0);
+    this.draw();
   },
   place() {
-    do { this.food = [Math.floor(Math.random()*this.N), Math.floor(Math.random()*this.N)]; }
-    while (this.snake.some(s => s[0] === this.food[0] && s[1] === this.food[1]));
+    let guard = 0;
+    do {
+      this.food = [Math.floor(Math.random() * this.N), Math.floor(Math.random() * this.N)];
+      guard++;
+    } while (guard < 500 && this.snake.some(s => s[0] === this.food[0] && s[1] === this.food[1]));
   },
   tick() {
     if (this.over || paused) return;
     if (this.queue.length) this.dir = this.queue.shift();
-    let x = this.snake[0][0] + this.dir[0], y = this.snake[0][1] + this.dir[1];
-    if (this.wrap) { x = (x + this.N) % this.N; y = (y + this.N) % this.N; }
-    else if (x < 0 || y < 0 || x >= this.N || y >= this.N) return this.die();
+
+    let x = this.snake[0][0] + this.dir[0];
+    let y = this.snake[0][1] + this.dir[1];
+
+    if (this.wrap) {
+      x = (x + this.N) % this.N;
+      y = (y + this.N) % this.N;
+    } else if (x < 0 || y < 0 || x >= this.N || y >= this.N) {
+      return this.die();
+    }
     if (this.snake.some(s => s[0] === x && s[1] === y)) return this.die();
+
     this.snake.unshift([x, y]);
+
     if (x === this.food[0] && y === this.food[1]) {
-      this.score++; best.set(gameName, this.score); hud(this.score); this.place();
+      this.score++;
+      best.set(gameName, this.score);
+      hud(this.score);
+      this.place();
       if (this.score % 5 === 0) {
         clearInterval(this.timer);
         this.delay = Math.max(62, this.delay - 8);
         this.timer = setInterval(() => this.tick(), this.delay);
       }
-    } else this.snake.pop();
+    } else {
+      this.snake.pop();
+    }
     this.draw();
   },
-  die() { this.over = true; clearInterval(this.timer); this.draw(); finish('Game over — ' + this.score); },
+  die() {
+    this.over = true;
+    clearInterval(this.timer);
+    this.draw();
+    finish('Game over — ' + this.score);
+  },
   draw() {
     const c = this.ctx, s = this.cell;
-    c.fillStyle = '#111'; c.fillRect(0, 0, this.cv.width, this.cv.height);
+    c.fillStyle = '#111';
+    c.fillRect(0, 0, this.cv.width, this.cv.height);
     c.fillStyle = '#f04e45';
-    c.beginPath(); c.arc(this.food[0]*s + s/2, this.food[1]*s + s/2, s*0.36, 0, 7); c.fill();
-    this.snake.forEach((p, i) => {
+    c.beginPath();
+    c.arc(this.food[0] * s + s / 2, this.food[1] * s + s / 2, s * 0.36, 0, 7);
+    c.fill();
+    for (let i = 0; i < this.snake.length; i++) {
+      const p = this.snake[i];
       c.fillStyle = i ? '#4ade80' : '#d1fae5';
-      c.fillRect(p[0]*s + 1, p[1]*s + 1, s - 2, s - 2);
-    });
+      c.fillRect(p[0] * s + 1, p[1] * s + 1, s - 2, s - 2);
+    }
   },
   turn(d) {
     const last = this.queue.length ? this.queue[this.queue.length - 1] : this.dir;
@@ -241,55 +335,85 @@ const GSnake = {
 
 /* ---------------- breakout ---------------- */
 const GBreak = {
-  W: 380, H: 440,
+  W: 380,
+  H: 440,
   start() {
     hideOverlay();
-    mount.innerHTML = '<canvas width="' + this.W + '" height="' + this.H + '"></canvas>';
+    mount.innerHTML = '<canvas width="380" height="440"></canvas>';
     this.cv = mount.querySelector('canvas');
     this.ctx = this.cv.getContext('2d');
     this.reset();
     this.timer = setInterval(() => this.tick(), 16);
   },
   reset() {
-    this.lives = 3; this.score = 0; this.level = 1; this.over = false; this.paused = false;
-    this.pw = 78; this.px = (this.W - this.pw) / 2;
-    this.bricks(); this.ball(); hud(0); this.draw();
+    this.lives = 3;
+    this.score = 0;
+    this.level = 1;
+    this.over = false;
+    this.paused = false;
+    this.pw = 78;
+    this.px = (this.W - this.pw) / 2;
+    this.bricks();
+    this.ball();
+    hud(0);
+    this.draw();
   },
   bricks() {
     this.br = [];
     const cols = ['#f87171','#fb923c','#fbbf24','#4ade80','#60a5fa'];
-    for (let r = 0; r < 5; r++) for (let c = 0; c < 8; c++)
-      this.br.push({x: 12 + c * 45, y: 42 + r * 22, w: 41, h: 16, hp: 1, col: cols[r]});
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 8; c++) {
+        this.br.push({x: 12 + c * 45, y: 42 + r * 22, w: 41, h: 16, hp: 1, col: cols[r]});
+      }
+    }
   },
   ball() {
-    this.bx = this.W / 2; this.by = this.H - 60;
-    this.vx = (Math.random() < .5 ? -1 : 1) * 3.2;
+    this.bx = this.W / 2;
+    this.by = this.H - 60;
+    this.vx = (Math.random() < 0.5 ? -1 : 1) * 3.2;
     this.vy = -(3.6 + this.level * 0.15);
   },
   tick() {
     if (this.over || this.paused || paused) return;
-    this.bx += this.vx; this.by += this.vy;
+
+    this.bx += this.vx;
+    this.by += this.vy;
+
     if (this.bx < 7 || this.bx > this.W - 7) this.vx *= -1;
     if (this.by < 7) this.vy = Math.abs(this.vy);
+
     if (this.by > this.H) {
-      this.lives--; hud(this.score);
+      this.lives--;
+      hud(this.score);
       if (this.lives <= 0) {
-        this.over = true; clearInterval(this.timer);
-        finish('Game over — ' + this.score); return;
+        this.over = true;
+        clearInterval(this.timer);
+        finish('Game over — ' + this.score);
+        return;
       }
       this.ball();
     }
+
     if (this.by > this.H - 28 && this.by < this.H - 12 &&
         this.bx > this.px && this.bx < this.px + this.pw) {
       this.vy = -Math.abs(this.vy);
       this.vx = ((this.bx - (this.px + this.pw / 2)) / (this.pw / 2)) * 4.2;
     }
-    for (const b of this.br) {
+
+    for (let i = 0; i < this.br.length; i++) {
+      const b = this.br[i];
       if (!b.hp) continue;
       if (this.bx > b.x && this.bx < b.x + b.w && this.by > b.y && this.by < b.y + b.h) {
-        b.hp = 0; this.vy *= -1;
-        this.score += 10; best.set(gameName, this.score); hud(this.score);
-        if (!this.br.some(x => x.hp)) { this.level++; this.bricks(); this.ball(); }
+        b.hp = 0;
+        this.vy *= -1;
+        this.score += 10;
+        best.set(gameName, this.score);
+        hud(this.score);
+        if (!this.br.some(x => x.hp)) {
+          this.level++;
+          this.bricks();
+          this.ball();
+        }
         break;
       }
     }
@@ -297,15 +421,25 @@ const GBreak = {
   },
   draw() {
     const c = this.ctx;
-    c.fillStyle = '#0b0f14'; c.fillRect(0, 0, this.W, this.H);
-    this.br.forEach(b => { if (b.hp) { c.fillStyle = b.col; c.fillRect(b.x, b.y, b.w, b.h); } });
-    c.fillStyle = '#e5e7eb'; c.fillRect(this.px, this.H - 26, this.pw, 9);
+    c.fillStyle = '#0b0f14';
+    c.fillRect(0, 0, this.W, this.H);
+    for (let i = 0; i < this.br.length; i++) {
+      const b = this.br[i];
+      if (b.hp) { c.fillStyle = b.col; c.fillRect(b.x, b.y, b.w, b.h); }
+    }
+    c.fillStyle = '#e5e7eb';
+    c.fillRect(this.px, this.H - 26, this.pw, 9);
     c.fillStyle = '#fff';
-    c.beginPath(); c.arc(this.bx, this.by, 5, 0, 7); c.fill();
-    c.fillStyle = '#94a3b8'; c.font = '11px system-ui';
+    c.beginPath();
+    c.arc(this.bx, this.by, 5, 0, 7);
+    c.fill();
+    c.fillStyle = '#94a3b8';
+    c.font = '11px system-ui';
     c.fillText('Lives ' + this.lives + '   Level ' + this.level, 10, 22);
   },
-  nudge(dx) { this.px = Math.max(6, Math.min(this.W - this.pw - 6, this.px + dx)); },
+  nudge(dx) {
+    this.px = Math.max(6, Math.min(this.W - this.pw - 6, this.px + dx));
+  },
   key(e) {
     if (e.key === 'ArrowLeft' || e.key === 'a') { this.nudge(-26); return true; }
     if (e.key === 'ArrowRight' || e.key === 'd') { this.nudge(26); return true; }
@@ -319,42 +453,55 @@ const GMines = {
   start() {
     hideOverlay();
     const N = 9;
-    this.N = N; this.mines = 10; this.flagMode = false; this.over = false;
-    this.ready = false; this.left = this.mines;
+    this.N = N;
+    this.mines = 10;
+    this.flagMode = false;
+    this.over = false;
+    this.ready = false;
+    this.left = this.mines;
     this.cells = Array(N * N).fill(0);
+
     mount.innerHTML = '<div class="mgrid"></div>';
     this.grid = mount.firstChild;
     this.grid.style.gridTemplateColumns = 'repeat(' + N + ', 26px)';
     this.doms = [];
+
     for (let i = 0; i < N * N; i++) {
       const d = document.createElement('div');
       d.className = 'cell';
       d.onclick = () => this.open(i);
       d.oncontextmenu = ev => { ev.preventDefault(); this.flag(i); };
-      this.grid.appendChild(d); this.doms.push(d);
+      this.grid.appendChild(d);
+      this.doms.push(d);
     }
     hud(this.left);
   },
   nbrs(i) {
     const N = this.N, r = Math.floor(i / N), c = i % N, out = [];
-    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-      if (!dr && !dc) continue;
-      const rr = r + dr, cc = c + dc;
-      if (rr >= 0 && cc >= 0 && rr < N && cc < N) out.push(rr * N + cc);
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const rr = r + dr, cc = c + dc;
+        if (rr >= 0 && cc >= 0 && rr < N && cc < N) out.push(rr * N + cc);
+      }
     }
     return out;
   },
   seed(first) {
-    const N = this.N; let placed = 0;
-    while (placed < this.mines) {
-      const i = Math.floor(Math.random() * N * N);
+    let placed = 0;
+    let guard = 0;
+    while (placed < this.mines && guard < 2000) {
+      guard++;
+      const i = Math.floor(Math.random() * this.N * this.N);
       if (i === first || this.cells[i] === 9) continue;
-      this.cells[i] = 9; placed++;
+      this.cells[i] = 9;
+      placed++;
     }
-    for (let i = 0; i < N * N; i++) {
+    for (let i = 0; i < this.N * this.N; i++) {
       if (this.cells[i] === 9) continue;
       let n = 0;
-      for (const j of this.nbrs(i)) if (this.cells[j] === 9) n++;
+      const nb = this.nbrs(i);
+      for (let j = 0; j < nb.length; j++) if (this.cells[nb[j]] === 9) n++;
       this.cells[i] = n;
     }
     this.ready = true;
@@ -365,36 +512,57 @@ const GMines = {
     if (!this.ready) this.seed(i);
     if (this.doms[i].classList.contains('open')) return;
     if (this.cells[i] === 9) return this.boom(i);
-    this.reveal(i); this.check();
+    this.reveal(i);
+    this.check();
   },
   reveal(i) {
     const d = this.doms[i];
     if (d.classList.contains('open')) return;
-    d.classList.add('open'); d.classList.remove('flag');
+    d.classList.add('open');
+    d.classList.remove('flag');
+
     const v = this.cells[i];
     if (v > 0) {
       d.textContent = v;
       d.style.color = ['','#1a73e8','#188038','#d93025','#9334e6','#b06000','#0b8043','#c5221f','#5f6368'][v];
-    } else this.nbrs(i).forEach(j => this.reveal(j));
+    } else {
+      const nb = this.nbrs(i);
+      for (let j = 0; j < nb.length; j++) this.reveal(nb[j]);
+    }
   },
   flag(i) {
     const d = this.doms[i];
     if (this.over || d.classList.contains('open')) return;
-    if (d.classList.contains('flag')) { d.classList.remove('flag'); d.textContent = ''; this.left++; }
-    else { d.classList.add('flag'); d.textContent = '⚑'; this.left--; }
+    if (d.classList.contains('flag')) {
+      d.classList.remove('flag');
+      d.textContent = '';
+      this.left++;
+    } else {
+      d.classList.add('flag');
+      d.textContent = '⚑';
+      this.left--;
+    }
     hud(this.left);
   },
   boom(i) {
     this.over = true;
-    this.cells.forEach((v, j) => {
-      if (v === 9) { this.doms[j].classList.add('open', 'mine'); this.doms[j].textContent = '✷'; }
-    });
+    for (let j = 0; j < this.cells.length; j++) {
+      if (this.cells[j] === 9) {
+        this.doms[j].classList.add('open', 'mine');
+        this.doms[j].textContent = '✷';
+      }
+    }
     this.doms[i].style.background = '#c62828';
     finish('Boom — try again');
   },
   check() {
-    if (this.doms.filter(d => d.classList.contains('open')).length === this.N * this.N - this.mines) {
-      this.over = true; finish('Cleared');
+    let open = 0;
+    for (let i = 0; i < this.doms.length; i++) {
+      if (this.doms[i].classList.contains('open')) open++;
+    }
+    if (open === this.N * this.N - this.mines) {
+      this.over = true;
+      finish('Cleared');
     }
   },
   key(e) {
@@ -408,37 +576,66 @@ const GMines = {
 const GAMES = {'2048': G2048, snake: GSnake, breakout: GBreak, mines: GMines};
 
 function launch(name) {
-  if (game && game.stop) game.stop();
+  const key = GAMES[name] ? name : '2048';
+
+  if (game && game.stop) {
+    try { game.stop(); } catch (e) {}
+  }
+
   paused = false;
-  document.getElementById('pause').textContent = 'Pause';
-  gameName = name; game = GAMES[name];
-  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.g === name));
-  document.getElementById('pad').classList.toggle('show', name !== 'mines');
-  hideOverlay(); hud(0); game.start();
-  localStorage.setItem('su_last', name);
+  byId('pause').textContent = 'Pause';
+  gameName = key;
+  game = GAMES[key];
+
+  const tabs = document.querySelectorAll('.tabs button');
+  for (let i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle('on', tabs[i].dataset.g === key);
+  }
+  byId('pad').classList.toggle('show', key !== 'mines');
+
+  hideOverlay();
+  hud(0);
+
+  try {
+    game.start();
+    try { localStorage.setItem('su_last', key); } catch (e) {}
+  } catch (e) {
+    const err = byId('err');
+    err.style.display = 'block';
+    err.textContent = 'Could not start ' + key + ': ' + e.message;
+  }
 }
 
 function togglePause() {
   if (!game || gameName === 'mines' || gameName === '2048') return;
   paused = !paused;
-  document.getElementById('pause').textContent = paused ? 'Resume' : 'Pause';
+  byId('pause').textContent = paused ? 'Resume' : 'Pause';
 }
 
-document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => launch(b.dataset.g));
-document.getElementById('restart').onclick = () => launch(gameName);
-document.getElementById('pause').onclick = togglePause;
-document.getElementById('ovbtn').onclick = () => launch(gameName);
+/* ---------------- wiring ---------------- */
+const tabBtns = document.querySelectorAll('.tabs button');
+for (let i = 0; i < tabBtns.length; i++) {
+  tabBtns[i].onclick = () => launch(tabBtns[i].dataset.g);
+}
 
-document.querySelectorAll('#pad button').forEach(b => {
+byId('restart').onclick = () => launch(gameName);
+byId('pause').onclick = togglePause;
+byId('ovbtn').onclick = () => launch(gameName);
+
+const padBtns = document.querySelectorAll('#pad button');
+for (let i = 0; i < padBtns.length; i++) {
+  const b = padBtns[i];
   let iv = null;
   const press = () => { if (game) game.key({key: b.dataset.k}); };
+
   b.addEventListener('pointerdown', ev => {
-    ev.preventDefault(); press();
+    ev.preventDefault();
+    press();
     if (gameName === 'breakout') iv = setInterval(press, 90);
   });
   b.addEventListener('pointerup', () => { clearInterval(iv); iv = null; });
   b.addEventListener('pointerleave', () => { clearInterval(iv); iv = null; });
-});
+}
 
 document.addEventListener('keydown', e => {
   if (!game) return;
@@ -450,8 +647,10 @@ document.addEventListener('keydown', e => {
 
 let tx = 0, ty = 0;
 mount.addEventListener('touchstart', e => {
-  tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+  tx = e.touches[0].clientX;
+  ty = e.touches[0].clientY;
 }, {passive: true});
+
 mount.addEventListener('touchend', e => {
   const dx = e.changedTouches[0].clientX - tx;
   const dy = e.changedTouches[0].clientY - ty;
@@ -461,4 +660,24 @@ mount.addEventListener('touchend', e => {
   else game.key({key: dy > 0 ? 'ArrowDown' : 'ArrowUp'});
 }, {passive: true});
 
-launch(localStorage.getItem('su_last') && START === '2048' ? localStorage.getItem('su_last') : START);
+/* ---------------- boot ---------------- */
+try {
+  const need = ['err','mount','stat','overlay','ovtext','pad','restart','pause','ovbtn'];
+  const missing = need.filter(id => !byId(id));
+  if (missing.length) {
+    const err = byId('err');
+    err.style.display = 'block';
+    err.textContent = 'Broken paste — missing: ' + missing.join(', ');
+  } else {
+    let last = null;
+    try { last = localStorage.getItem('su_last'); } catch (e) {}
+    launch(GAMES[last] ? last : (GAMES[RAW] ? RAW : '2048'));
+  }
+} catch (e) {
+  const err = byId('err');
+  err.style.display = 'block';
+  err.textContent = 'Boot error: ' + e.message;
+}
+</script>
+</body>
+</html>
