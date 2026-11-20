@@ -3,10 +3,10 @@
 <head><base target="_top">
 <script>
 window.onerror = function (m, s, l) {
-  var el = document.getElementById('status');
-  if (el) {
-    el.style.color = '#c62828';
-    el.textContent = 'Script error: ' + m + ' (line ' + l + ') — paste likely truncated';
+  var e = document.getElementById('status');
+  if (e) {
+    e.style.color = '#c62828';
+    e.textContent = 'Script error: ' + m + ' (line ' + l + ') — paste likely truncated';
   }
 };
 </script>
@@ -14,12 +14,12 @@ window.onerror = function (m, s, l) {
   *{box-sizing:border-box}
   body{margin:0;font:13px system-ui,-apple-system,sans-serif;background:#fff;color:#202124}
   header{display:flex;gap:6px;padding:8px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap}
-  input[type=text]{flex:1;min-width:150px;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px}
-  button{padding:6px 10px;border:1px solid #ccc;background:#f5f5f5;border-radius:4px;
+  input[type=text]{flex:1;min-width:150px;padding:7px 9px;border:1px solid #ccc;border-radius:4px;font-size:14px}
+  button{padding:7px 11px;border:1px solid #ccc;background:#f5f5f5;border-radius:4px;
          cursor:pointer;font-size:12px;color:inherit}
   button:hover{background:#e8eaed}
   #status{font-size:11px;color:#666;padding:5px 8px;min-height:15px;word-break:break-word}
-  #results{max-height:300px;overflow-y:auto;padding:4px 8px 8px}
+  #results{max-height:330px;overflow-y:auto;padding:4px 8px 8px}
   .card{display:flex;gap:8px;padding:6px;border-radius:4px;cursor:pointer;border:1px solid transparent}
   .card:hover{background:#f1f3f4;border-color:#dadce0}
   .thumb{width:76px;flex:0 0 76px;aspect-ratio:16/9;background:#e8eaed;border-radius:3px;overflow:hidden}
@@ -37,11 +37,11 @@ window.onerror = function (m, s, l) {
 </head>
 <body>
 <header>
-  <input id="q" type="text" placeholder="Search, or paste a video / shorts URL">
+  <input id="q" type="text" placeholder="Search a video — or paste a link">
   <button id="go">Search</button>
   <button id="diagBtn" title="Test connections">?</button>
 </header>
-<div id="status">Pick a result — it loads on the player slide and the deck jumps there.</div>
+<div id="status">Starting…</div>
 <h2>Saved</h2>
 <div class="chips" id="saved"></div>
 <h2>Recent</h2>
@@ -56,22 +56,24 @@ const CLIENTS = [
   {clientName: 'ANDROID', clientVersion: '19.45.36', androidSdkVersion: 30, hl: 'en', gl: 'US'}
 ];
 
-const el = id => document.getElementById(id);
-const statusEl = el('status');
-const results = el('results');
-const diagOut = el('diagOut');
+const byId = id => document.getElementById(id);
+const statusEl = byId('status');
+const resultsEl = byId('results');
+const diagOut = byId('diagOut');
 
-function status(t, bad) {
+function say(t, bad) {
   if (!statusEl) return;
   statusEl.style.color = bad ? '#c62828' : '#666';
   statusEl.textContent = t;
 }
 
-function on(id, ev, fn) {
-  const n = el(id);
+function bind(id, ev, fn) {
+  const n = byId(id);
   if (!n) return;
   n.addEventListener(ev, e => {
-    try { fn(e); } catch (err) { status('Error: ' + err.message, true); }
+    Promise.resolve()
+      .then(() => fn(e))
+      .catch(err => say('Error: ' + (err && err.message ? err.message : err), true));
   });
 }
 
@@ -140,27 +142,27 @@ function vidOf(x) {
   return /^[A-Za-z0-9_-]{11}$/.test(x) ? x : null;
 }
 
-/* the whole point: insert on the player slide, jump there, close */
-function open(v) {
-  status('Loading "' + (v.title || v.id) + '" onto the player slide\u2026');
+/* result → id → player slide → jump → close */
+function play(v) {
+  say('Putting "' + (v.title || v.id) + '" on the player slide…');
   google.script.run
     .withSuccessHandler(r => {
       if (r && r.ok) {
-        status('Playing on slide ' + r.n + '. Press the present button.');
+        say('Playing on slide ' + r.n + '. Hit present.');
         setTimeout(() => { try { google.script.host.close(); } catch (e) {} }, 700);
       } else {
-        status('Insert failed: ' + ((r && r.msg) || 'unknown'), true);
+        say('Insert failed: ' + ((r && r.msg) || 'unknown'), true);
       }
     })
     .withFailureHandler(err => {
-      status('Insert failed: ' + (err && err.message ? err.message : err), true);
+      say('Insert failed: ' + (err && err.message ? err.message : err), true);
     })
     .playVideo(v.id, v.title || '');
 }
 
-function openTracked(v) {
+function playTracked(v) {
   pushRecent(v);
-  open(v);
+  play(v);
 }
 
 function card(v) {
@@ -170,19 +172,19 @@ function card(v) {
     '/mqdefault.jpg"></div><div class="meta"><b></b><i></i></div>';
   d.querySelector('img').onerror = function () { this.parentNode.style.display = 'none'; };
   d.querySelector('b').textContent = v.title;
-  d.querySelector('i').textContent = [v.author, v.length].filter(Boolean).join(' \u00b7 ');
-  d.onclick = () => openTracked(v);
+  d.querySelector('i').textContent = [v.author, v.length].filter(Boolean).join(' · ');
+  d.onclick = () => playTracked(v);
   return d;
 }
 
 function render(list) {
-  results.innerHTML = '';
+  resultsEl.innerHTML = '';
   if (!list || !list.length) {
-    status('No results. Paste a direct link instead, or hit ? to test connections.');
+    say('No results. Try different words, or paste a link.');
     return;
   }
-  status(list.length + ' results — click one to play it.');
-  list.forEach(v => results.appendChild(card(v)));
+  say(list.length + ' results — click one to play it.');
+  list.forEach(v => resultsEl.appendChild(card(v)));
 }
 
 function readLS(k) {
@@ -197,7 +199,7 @@ function paintChips(k, elm) {
     c.className = 'chip';
     c.textContent = v.title || v.id;
     c.title = v.title || v.id;
-    c.onclick = () => openTracked(v);
+    c.onclick = () => playTracked(v);
     elm.appendChild(c);
   });
 }
@@ -206,36 +208,39 @@ function pushRecent(v) {
   const a = readLS('su_recent').filter(x => x.id !== v.id);
   a.unshift(v);
   writeLS('su_recent', a);
-  paintChips('su_recent', el('recent'));
+  paintChips('su_recent', byId('recent'));
 }
 
-on('go', 'click', async () => {
-  const raw = el('q').value.trim();
-  if (!raw) { status('Type something first.'); return; }
+async function doSearch() {
+  const raw = byId('q').value.trim();
+  if (!raw) { byId('q').focus(); say('Type something to search.'); return; }
+
   const id = vidOf(raw);
-  if (id) { openTracked({id: id, title: ''}); return; }
+  if (id) { playTracked({id: id, title: ''}); return; }
 
   diagOut.style.display = 'none';
-  results.innerHTML = '';
-  status('Searching\u2026');
-
-  const res = await serverSearch(raw);
-  if (Array.isArray(res) && res.length) { render(res); return; }
+  resultsEl.innerHTML = '';
+  say('Searching…');
 
   const local = await searchHere(raw);
   if (local.length) { render(local); return; }
 
-  if (res && res.err) status('Search failed: ' + res.err + ' — hit ? for diagnostics.', true);
-  else status('No results from either path. Paste a direct link instead.');
-});
+  say('Direct search unavailable, trying the server…');
+  const res = await serverSearch(raw);
+  if (Array.isArray(res) && res.length) { render(res); return; }
 
-on('q', 'keydown', e => { if (e.key === 'Enter') el('go').click(); });
+  const why = res && res.err ? res.err : 'empty response';
+  say('Search failed: ' + why + ' — hit ? for diagnostics.', true);
+}
 
-on('diagBtn', 'click', async () => {
+bind('go', 'click', doSearch);
+bind('q', 'keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+bind('diagBtn', 'click', async () => {
   diagOut.style.display = 'block';
-  diagOut.textContent = 'Browser path\u2026';
+  diagOut.textContent = 'Browser path…';
   const local = await searchHere('music');
-  diagOut.textContent = 'browser search: ' + local.length + ' results\nServer path\u2026';
+  diagOut.textContent = 'browser search: ' + local.length + ' results\nServer path…';
   const res = await serverSearch('music');
   if (Array.isArray(res)) {
     diagOut.textContent += ' ' + res.length + ' results\n\n';
@@ -250,18 +255,25 @@ on('diagBtn', 'click', async () => {
   }
 });
 
-/* boot */
+/* boot + self-test */
 try {
   const need = ['q','go','status','results','saved','recent','diagOut','diagBtn'];
-  const missing = need.filter(id => !el(id));
+  const missing = need.filter(id => !byId(id));
   if (missing.length) {
-    status('Broken paste — missing: ' + missing.join(', '), true);
+    say('Broken paste — missing: ' + missing.join(', '), true);
   } else {
-    paintChips('su_saved', el('saved'));
-    paintChips('su_recent', el('recent'));
+    paintChips('su_saved', byId('saved'));
+    paintChips('su_recent', byId('recent'));
+    byId('q').focus();
+
+    (async () => {
+      const probe = await searchHere('music');
+      if (probe.length) say('Ready. Self-test: ' + probe.length + ' results. Search a video.');
+      else say('Ready. Self-test found nothing — search may need the server. Hit ? if unsure.');
+    })();
   }
 } catch (e) {
-  status('Boot error: ' + e.message, true);
+  say('Boot error: ' + e.message, true);
 }
 </script>
 </body>
