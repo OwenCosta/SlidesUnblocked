@@ -1,1 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head><base target="_top">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:13px system-ui,-apple-system,sans-serif;color:#202124}
+  .tabs{display:flex;gap:4px;padding:8px 8px 0;border-bottom:1px solid #e0e0e0;flex-wrap:wrap}
+  .tabs button{padding:6px 11px;border:1px solid transparent;border-bottom:0;background:none;
+               border-radius:5px 5px 0 0;cursor:pointer;font-size:12px;color:#5f6368}
+  .tabs button.on{background:#fff;border-color:#e0e0e0;color:#202124;font-weight:600}
+  .panel{display:none;padding:16px}
+  .panel.on{display:block}
+  h2{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:#5f6368;margin:0 0 10px}
+  #t{font-size:52px;font-weight:500;text-align:center;margin:16px 0;font-variant-numeric:tabular-nums}
+  .row{display:flex;gap:8px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+  button{padding:7px 13px;border:1px solid #bbb;background:#f5f5f5;border-radius:4px;cursor:pointer;font-size:12px;color:inherit}
+  button:hover{background:#e8eaed}
+  button.pri{background:#1a73e8;border-color:#1a73e8;color:#fff}
+  input[type=text],input[type=number],textarea{width:100%;padding:6px 8px;border:1px solid #ccc;
+    border-radius:4px;font-size:13px;font-family:inherit}
+  label{display:block;font-size:11px;color:#5f6368;margin:9px 0 3px}
+  textarea{min-height:120px;resize:vertical}
+  p{color:#5f6368;line-height:1.6;margin:0 0 10px;font-size:12px}
+  #pick{font-size:26px;font-weight:600;text-align:center;margin:14px 0;min-height:34px}
+  pre{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:4px;padding:8px;
+      font-size:11px;white-space:pre-wrap;max-height:150px;overflow:auto;margin:8px 0 0}
+  .ok{color:#188038}
+</style>
+</head>
+<body>
+<div class="tabs">
+  <button data-p="timer">Timer</button>
+  <button data-p="watch">Stopwatch</button>
+  <button data-p="note">Notepad</button>
+  <button data-p="rand">Random</button>
+  <button data-p="updates">Updates</button>
+</div>
 
+<div class="panel" id="p-timer">
+  <h2>Timer</h2>
+  <div id="t">05:00</div>
+  <div class="row">
+    <button data-m="60">1 min</button>
+    <button data-m="300">5 min</button>
+    <button data-m="600">10 min</button>
+    <button data-m="1500">25 min</button>
+  </div>
+  <div class="row">
+    <button id="start" class="pri">Start</button>
+    <button id="pause">Pause</button>
+    <button id="reset">Reset</button>
+  </div>
+</div>
+
+<div class="panel" id="p-watch">
+  <h2>Stopwatch</h2>
+  <div id="sw" style="font-size:44px;font-weight:500;text-align:center;margin:16px 0;font-variant-numeric:tabular-nums">0.00</div>
+  <div class="row">
+    <button id="swStart" class="pri">Start</button>
+    <button id="swStop">Stop</button>
+    <button id="swReset">Reset</button>
+  </div>
+</div>
+
+<div class="panel" id="p-note">
+  <h2>Notepad</h2>
+  <textarea id="note" placeholder="Scratch space. Saves as you type."></textarea>
+  <p id="noteStatus" style="margin-top:8px"></p>
+</div>
+
+<div class="panel" id="p-rand">
+  <h2>Random picker</h2>
+  <p>One option per line.</p>
+  <textarea id="list" placeholder="pizza&#10;tacos&#10;sushi"></textarea>
+  <div class="row" style="margin-top:10px">
+    <button id="pickBtn" class="pri">Pick</button>
+    <button id="dice">Roll d20</button>
+    <button id="coin">Flip coin</button>
+  </div>
+  <div id="pick"></div>
+</div>
+
+<div class="panel" id="p-updates">
+  <h2>GitHub source</h2>
+  <p>Point this at a repo holding Games.html, Watch.html and Other.html. The deck pulls from it, so you push to GitHub and everyone gets the change. Leave the branch alone unless you know why.</p>
+  <label>Owner</label><input type="text" id="owner" placeholder="your-username">
+  <label>Repository</label><input type="text" id="repo" placeholder="slides-unblocked">
+  <label>Branch</label><input type="text" id="branch" placeholder="main">
+  <label>Subfolder (optional)</label><input type="text" id="path" placeholder="src">
+  <label>Token (only for private repos)</label><input type="text" id="token" placeholder="ghp_...">
+  <label style="margin-top:12px">
+    <input type="checkbox" id="auto"> Auto-sync when the deck opens
+  </label>
+  <div class="row" style="justify-content:flex-start;margin-top:14px">
+    <button id="saveCfg" class="pri">Save</button>
+    <button id="sync">Sync now</button>
+    <button id="clear">Clear download</button>
+  </div>
+  <pre id="log"></pre>
+</div>
+
+<script>
+const START = '<?= startTab ?>';
+const $ = s => document.querySelector(s);
+
+/* tabs */
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.dataset.p));
+function show(p) {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  document.querySelectorAll('.panel').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
+  if (p === 'updates') loadCfg();
+}
+
+/* beep */
+let ac = null;
+function beep(times) {
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < (times || 1); i++) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = 880; o.type = 'sine';
+      o.connect(g); g.connect(ac.destination);
+      const t0 = ac.currentTime + i * 0.28;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+      o.start(t0); o.stop(t0 + 0.24);
+    }
+  } catch (e) {}
+}
+
+/* timer */
+let left = 300, iv = null;
+const tEl = $('#t');
+const paintT = () => tEl.textContent =
+  String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+paintT();
+document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
+  clearInterval(iv); left = Number(b.dataset.m); paintT();
+});
+$('#start').onclick = () => {
+  clearInterval(iv);
+  iv = setInterval(() => {
+    if (left > 0) { left--; paintT(); }
+    else { clearInterval(iv); tEl.textContent = '00:00'; beep(3); }
+  }, 1000);
+};
+$('#pause').onclick = () => clearInterval(iv);
+$('#reset').onclick = () => { clearInterval(iv); left = 300; paintT(); };
+
+/* stopwatch */
+let swT = 0, swIv = null, swStart = 0;
+const swEl = $('#sw');
+$('#swStart').onclick = () => {
+  if (swIv) return;
+  swStart = Date.now() - swT * 1000;
+  swIv = setInterval(() => {
+    swT = (Date.now() - swStart) / 1000;
+    swEl.textContent = swT.toFixed(2);
+  }, 50);
+};
+$('#swStop').onclick = () => { clearInterval(swIv); swIv = null; };
+$('#swReset').onclick = () => { clearInterval(swIv); swIv = null; swT = 0; swEl.textContent = '0.00'; };
+
+/* notepad */
+const note = $('#note');
+note.value = localStorage.getItem('su_note') || '';
+note.oninput = () => {
+  localStorage.setItem('su_note', note.value);
+  $('#noteStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+};
+
+/* random */
+$('#pickBtn').onclick = () => {
+  const items = $('#list').value.split('\n').map(s => s.trim()).filter(Boolean);
+  $('#pick').textContent = items.length ? items[Math.floor(Math.random() * items.length)] : 'Add options first';
+};
+$('#dice').onclick = () => { $('#pick').textContent = 'd20: ' + (Math.floor(Math.random() * 20) + 1); };
+$('#coin').onclick = () => { $('#pick').textContent = Math.random() < 0.5 ? 'Heads' : 'Tails'; };
+
+/* updates */
+function loadCfg() {
+  google.script.run.withSuccessHandler(s => {
+    $('#owner').value = s.owner; $('#repo').value = s.repo;
+    $('#branch').value = s.branch; $('#path').value = s.path;
+    $('#token').value = s.token; $('#auto').checked = s.auto;
+    google.script.run.withSuccessHandler(st => {
+      $('#log').textContent = 'Repo: ' + st.repo + '\nLast sync: ' + st.last + '\n\n' +
+        st.files.join('\n') + (st.log ? '\n\n' + st.log : '');
+    }).getStatus();
+  }).getSettings();
+}
+
+$('#saveCfg').onclick = () => {
+  google.script.run.withSuccessHandler(() => { $('#log').textContent = 'Saved.'; }).saveSettings({
+    owner: $('#owner').value, repo: $('#repo').value, branch: $('#branch').value,
+    path: $('#path').value, token: $('#token').value, auto: $('#auto').checked
+  });
+};
+
+$('#sync').onclick = () => {
+  $('#log').textContent = 'Syncing\u2026';
+  google.script.run.withSuccessHandler(r => {
+    $('#log').textContent = (r.ok ? 'Done.\n\n' : 'Failed.\n\n') + r.log.join('\n');
+  }).syncNow();
+};
+
+$('#clear').onclick = () => {
+  google.script.run.withSuccessHandler(() => { $('#log').textContent = 'Download cleared.'; }).menuClear();
+};
+
+show(START || 'timer');
+</script>
+</body>
+</html>
