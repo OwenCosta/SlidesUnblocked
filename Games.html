@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
-  Slides Unblocked — Games
-  Owned by OwenCosta — https://github.com/OwenCosta/SlidesUnblocked
+  Slides Unblocked - Games
+  Owned by OwenCosta - https://github.com/OwenCosta/SlidesUnblocked
   MIT License, Copyright (c) 2026 OwenCosta
 -->
 <html>
@@ -11,7 +11,7 @@ window.onerror = function (m, s, l) {
   var e = document.getElementById('err');
   if (e) {
     e.style.display = 'block';
-    e.textContent = 'Script error: ' + m + ' (line ' + l + ') — paste likely truncated';
+    e.textContent = 'Script error: ' + m + ' (line ' + l + '), paste likely truncated';
   }
 };
 </script>
@@ -82,7 +82,7 @@ window.onerror = function (m, s, l) {
   <button data-k="ArrowLeft">◀</button><span></span><button data-k="ArrowRight">▶</button>
   <span></span><button data-k="ArrowDown">▼</button><span></span>
 </div>
-<div id="hint">Arrows / WASD · <b>n</b> new · <b>p</b> pause · 2048: <b>z</b> undo · snake: <b>x</b> wrap · mines: <b>f</b> flag</div>
+<div id="hint">Arrows or WASD · <b>n</b> new · <b>p</b> pause · 2048: <b>z</b> undo · snake: <b>x</b> wrap · mines: <b>f</b> flag</div>
 <div class="credit">Slides Unblocked · OwenCosta · github.com/OwenCosta/SlidesUnblocked</div>
 <script>
 const RAW = '<?= startMode ?>';
@@ -195,12 +195,12 @@ const G2048 = {
 
     if (!this.won && this.b.indexOf(2048) > -1) {
       this.won = true;
-      finish('2048 reached — keep going');
+      finish('2048 reached, keep going');
       setTimeout(hideOverlay, 1100);
     }
     if (this.stuck()) {
       this.over = true;
-      finish('Game over — ' + this.score);
+      finish('Game over: ' + this.score);
     }
   },
   stuck() {
@@ -301,7 +301,7 @@ const GSnake = {
     this.over = true;
     clearInterval(this.timer);
     this.draw();
-    finish('Game over — ' + this.score);
+    finish('Game over: ' + this.score);
   },
   draw() {
     const c = this.ctx, s = this.cell;
@@ -388,7 +388,7 @@ const GBreak = {
       if (this.lives <= 0) {
         this.over = true;
         clearInterval(this.timer);
-        finish('Game over — ' + this.score);
+        finish('Game over: ' + this.score);
         return;
       }
       this.ball();
@@ -553,7 +553,7 @@ const GMines = {
       }
     }
     this.doms[i].style.background = '#c62828';
-    finish('Boom — try again');
+    finish('Boom, try again');
   },
   check() {
     let open = 0;
@@ -667,7 +667,7 @@ try {
   if (missing.length) {
     const err = byId('err');
     err.style.display = 'block';
-    err.textContent = 'Broken paste — missing: ' + missing.join(', ');
+    err.textContent = 'Broken paste, missing: ' + missing.join(', ');
   } else {
     let last = null;
     try { last = localStorage.getItem('su_last'); } catch (e) {}
