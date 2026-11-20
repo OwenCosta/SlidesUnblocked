@@ -1,14 +1,25 @@
+<!DOCTYPE html>
 <!--
-  Slides Unblocked — Owned by OwenCosta
-  https://github.com/OwenCosta/SlidesUnblocked
+  Slides Unblocked - Tools and Updates
+  Owned by OwenCosta - https://github.com/OwenCosta/SlidesUnblocked
   MIT License, Copyright (c) 2026 OwenCosta
 -->
-<!DOCTYPE html>
 <html>
 <head><base target="_top">
+<script>
+window.onerror = function (m, s, l) {
+  var e = document.getElementById('err');
+  if (e) {
+    e.style.display = 'block';
+    e.textContent = 'Script error: ' + m + ' (line ' + l + '), paste likely truncated';
+  }
+};
+</script>
 <style>
   *{box-sizing:border-box}
   body{margin:0;font:13px system-ui,-apple-system,sans-serif;color:#202124}
+  #err{display:none;background:#fce8e6;color:#c62828;font-size:11px;padding:6px 8px;
+       border-bottom:1px solid #f5c6c2;word-break:break-word}
   .tabs{display:flex;gap:4px;padding:8px 8px 0;border-bottom:1px solid #e0e0e0;flex-wrap:wrap}
   .tabs button{padding:6px 11px;border:1px solid transparent;border-bottom:0;background:none;
                border-radius:5px 5px 0 0;cursor:pointer;font-size:12px;color:#5f6368}
@@ -21,7 +32,7 @@
   button{padding:7px 13px;border:1px solid #bbb;background:#f5f5f5;border-radius:4px;cursor:pointer;font-size:12px;color:inherit}
   button:hover{background:#e8eaed}
   button.pri{background:#1a73e8;border-color:#1a73e8;color:#fff}
-  input[type=text],input[type=number],textarea{width:100%;padding:6px 8px;border:1px solid #ccc;
+  input[type=text],textarea{width:100%;padding:6px 8px;border:1px solid #ccc;
     border-radius:4px;font-size:13px;font-family:inherit}
   label{display:block;font-size:11px;color:#5f6368;margin:9px 0 3px}
   textarea{min-height:120px;resize:vertical}
@@ -29,10 +40,14 @@
   #pick{font-size:26px;font-weight:600;text-align:center;margin:14px 0;min-height:34px}
   pre{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:4px;padding:8px;
       font-size:11px;white-space:pre-wrap;max-height:150px;overflow:auto;margin:8px 0 0}
-  .ok{color:#188038}
+  .repo{background:#eef4fe;border:1px solid #c6dafc;border-radius:4px;padding:8px 10px;
+        font-size:12px;margin-bottom:14px;color:#174ea6}
+  .repo b{font-weight:600}
+  .credit{font-size:10px;color:#80868b;text-align:center;padding:0 8px 10px}
 </style>
 </head>
 <body>
+<div id="err"></div>
 <div class="tabs">
   <button data-p="timer">Timer</button>
   <button data-p="watch">Stopwatch</button>
@@ -87,32 +102,45 @@
 
 <div class="panel" id="p-updates">
   <h2>GitHub source</h2>
-  <p>Point this at a repo holding Games.html, Watch.html and Other.html. The deck pulls from it, so you push to GitHub and everyone gets the change. Leave the branch alone unless you know why.</p>
-  <label>Owner</label><input type="text" id="owner" placeholder="your-username">
-  <label>Repository</label><input type="text" id="repo" placeholder="slides-unblocked">
+  <div class="repo" id="repoInfo"></div>
+  <p>Content comes from the repo above. Push there and the deck picks it up on next open. Override below only if you fork it.</p>
+  <label>Owner</label><input type="text" id="owner" placeholder="OwenCosta">
+  <label>Repository</label><input type="text" id="repo" placeholder="SlidesUnblocked">
   <label>Branch</label><input type="text" id="branch" placeholder="main">
-  <label>Subfolder (optional)</label><input type="text" id="path" placeholder="src">
-  <label>Token (only for private repos)</label><input type="text" id="token" placeholder="ghp_...">
+  <label>Subfolder (optional)</label><input type="text" id="path" placeholder="">
+  <label>Token (only for private forks)</label><input type="text" id="token" placeholder="ghp_...">
   <label style="margin-top:12px">
     <input type="checkbox" id="auto"> Auto-sync when the deck opens
   </label>
   <div class="row" style="justify-content:flex-start;margin-top:14px">
     <button id="saveCfg" class="pri">Save</button>
     <button id="sync">Sync now</button>
+    <button id="resetRepo">Reset to default</button>
     <button id="clear">Clear download</button>
   </div>
   <pre id="log"></pre>
 </div>
 
+<div class="credit">Slides Unblocked · OwenCosta · github.com/OwenCosta/SlidesUnblocked</div>
+
 <script>
 const START = '<?= startTab ?>';
-const $ = s => document.querySelector(s);
+const byId = id => document.getElementById(id);
 
 /* tabs */
-document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.dataset.p));
+const tabBtns = document.querySelectorAll('.tabs button');
+for (let i = 0; i < tabBtns.length; i++) {
+  tabBtns[i].onclick = () => show(tabBtns[i].dataset.p);
+}
+
 function show(p) {
-  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
-  document.querySelectorAll('.panel').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
+  for (let i = 0; i < tabBtns.length; i++) {
+    tabBtns[i].classList.toggle('on', tabBtns[i].dataset.p === p);
+  }
+  const panels = document.querySelectorAll('.panel');
+  for (let i = 0; i < panels.length; i++) {
+    panels[i].classList.toggle('on', panels[i].id === 'p-' + p);
+  }
   if (p === 'updates') loadCfg();
 }
 
@@ -123,40 +151,58 @@ function beep(times) {
     ac = ac || new (window.AudioContext || window.webkitAudioContext)();
     for (let i = 0; i < (times || 1); i++) {
       const o = ac.createOscillator(), g = ac.createGain();
-      o.frequency.value = 880; o.type = 'sine';
-      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = 880;
+      o.type = 'sine';
+      o.connect(g);
+      g.connect(ac.destination);
       const t0 = ac.currentTime + i * 0.28;
       g.gain.setValueAtTime(0.0001, t0);
       g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-      o.start(t0); o.stop(t0 + 0.24);
+      o.start(t0);
+      o.stop(t0 + 0.24);
     }
   } catch (e) {}
 }
 
 /* timer */
 let left = 300, iv = null;
-const tEl = $('#t');
-const paintT = () => tEl.textContent =
-  String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+const tEl = byId('t');
+function paintT() {
+  tEl.textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+}
 paintT();
-document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
-  clearInterval(iv); left = Number(b.dataset.m); paintT();
-});
-$('#start').onclick = () => {
+
+const minuteBtns = document.querySelectorAll('[data-m]');
+for (let i = 0; i < minuteBtns.length; i++) {
+  minuteBtns[i].onclick = () => {
+    clearInterval(iv);
+    left = Number(minuteBtns[i].dataset.m);
+    paintT();
+  };
+}
+
+byId('start').onclick = () => {
   clearInterval(iv);
   iv = setInterval(() => {
-    if (left > 0) { left--; paintT(); }
-    else { clearInterval(iv); tEl.textContent = '00:00'; beep(3); }
+    if (left > 0) {
+      left--;
+      paintT();
+    } else {
+      clearInterval(iv);
+      tEl.textContent = '00:00';
+      beep(3);
+    }
   }, 1000);
 };
-$('#pause').onclick = () => clearInterval(iv);
-$('#reset').onclick = () => { clearInterval(iv); left = 300; paintT(); };
+byId('pause').onclick = () => clearInterval(iv);
+byId('reset').onclick = () => { clearInterval(iv); left = 300; paintT(); };
 
 /* stopwatch */
 let swT = 0, swIv = null, swStart = 0;
-const swEl = $('#sw');
-$('#swStart').onclick = () => {
+const swEl = byId('sw');
+
+byId('swStart').onclick = () => {
   if (swIv) return;
   swStart = Date.now() - swT * 1000;
   swIv = setInterval(() => {
@@ -164,57 +210,95 @@ $('#swStart').onclick = () => {
     swEl.textContent = swT.toFixed(2);
   }, 50);
 };
-$('#swStop').onclick = () => { clearInterval(swIv); swIv = null; };
-$('#swReset').onclick = () => { clearInterval(swIv); swIv = null; swT = 0; swEl.textContent = '0.00'; };
+byId('swStop').onclick = () => { clearInterval(swIv); swIv = null; };
+byId('swReset').onclick = () => { clearInterval(swIv); swIv = null; swT = 0; swEl.textContent = '0.00'; };
 
 /* notepad */
-const note = $('#note');
-note.value = localStorage.getItem('su_note') || '';
+const note = byId('note');
+try { note.value = localStorage.getItem('su_note') || ''; } catch (e) {}
 note.oninput = () => {
-  localStorage.setItem('su_note', note.value);
-  $('#noteStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+  try { localStorage.setItem('su_note', note.value); } catch (e) {}
+  byId('noteStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
 };
 
 /* random */
-$('#pickBtn').onclick = () => {
-  const items = $('#list').value.split('\n').map(s => s.trim()).filter(Boolean);
-  $('#pick').textContent = items.length ? items[Math.floor(Math.random() * items.length)] : 'Add options first';
+byId('pickBtn').onclick = () => {
+  const items = byId('list').value.split('\n').map(s => s.trim()).filter(Boolean);
+  byId('pick').textContent = items.length ? items[Math.floor(Math.random() * items.length)] : 'Add options first';
 };
-$('#dice').onclick = () => { $('#pick').textContent = 'd20: ' + (Math.floor(Math.random() * 20) + 1); };
-$('#coin').onclick = () => { $('#pick').textContent = Math.random() < 0.5 ? 'Heads' : 'Tails'; };
+byId('dice').onclick = () => { byId('pick').textContent = 'd20: ' + (Math.floor(Math.random() * 20) + 1); };
+byId('coin').onclick = () => { byId('pick').textContent = Math.random() < 0.5 ? 'Heads' : 'Tails'; };
 
 /* updates */
 function loadCfg() {
   google.script.run.withSuccessHandler(s => {
-    $('#owner').value = s.owner; $('#repo').value = s.repo;
-    $('#branch').value = s.branch; $('#path').value = s.path;
-    $('#token').value = s.token; $('#auto').checked = s.auto;
+    byId('repoInfo').innerHTML = 'Source: <b>' + s.owner + '/' + s.repo + '@' + s.branch + '</b>' +
+      (s.isDefault ? ' (hardcoded default)' : ' (override)');
+    byId('owner').value = s.owner;
+    byId('repo').value = s.repo;
+    byId('branch').value = s.branch;
+    byId('path').value = s.path;
+    byId('token').value = s.token;
+    byId('auto').checked = s.auto;
+
     google.script.run.withSuccessHandler(st => {
-      $('#log').textContent = 'Repo: ' + st.repo + '\nLast sync: ' + st.last + '\n\n' +
+      byId('log').textContent = 'Last sync: ' + st.last + '\n\n' +
         st.files.join('\n') + (st.log ? '\n\n' + st.log : '');
     }).getStatus();
   }).getSettings();
 }
 
-$('#saveCfg').onclick = () => {
-  google.script.run.withSuccessHandler(() => { $('#log').textContent = 'Saved.'; }).saveSettings({
-    owner: $('#owner').value, repo: $('#repo').value, branch: $('#branch').value,
-    path: $('#path').value, token: $('#token').value, auto: $('#auto').checked
+byId('saveCfg').onclick = () => {
+  google.script.run.withSuccessHandler(() => {
+    byId('log').textContent = 'Saved.';
+    loadCfg();
+  }).saveSettings({
+    owner: byId('owner').value,
+    repo: byId('repo').value,
+    branch: byId('branch').value,
+    path: byId('path').value,
+    token: byId('token').value,
+    auto: byId('auto').checked
   });
 };
 
-$('#sync').onclick = () => {
-  $('#log').textContent = 'Syncing\u2026';
+byId('sync').onclick = () => {
+  byId('log').textContent = 'Syncing...';
   google.script.run.withSuccessHandler(r => {
-    $('#log').textContent = (r.ok ? 'Done.\n\n' : 'Failed.\n\n') + r.log.join('\n');
+    byId('log').textContent = (r.ok ? 'Done.\n\n' : 'Failed.\n\n') + r.log.join('\n');
   }).syncNow();
 };
 
-$('#clear').onclick = () => {
-  google.script.run.withSuccessHandler(() => { $('#log').textContent = 'Download cleared.'; }).menuClear();
+byId('resetRepo').onclick = () => {
+  byId('log').textContent = 'Resetting...';
+  google.script.run.withSuccessHandler(log => {
+    byId('log').textContent = 'Back to default repo.\n\n' + log.join('\n');
+    loadCfg();
+  }).resetRepo();
 };
 
-show(START || 'timer');
+byId('clear').onclick = () => {
+  google.script.run.withSuccessHandler(() => { byId('log').textContent = 'Download cleared.'; }).menuClear();
+};
+
+/* boot */
+try {
+  const need = ['err','t','sw','note','noteStatus','list','pick','repoInfo','owner','repo',
+                'branch','path','token','auto','log','saveCfg','sync','resetRepo','clear',
+                'start','pause','reset','swStart','swStop','swReset','pickBtn','dice','coin'];
+  const missing = need.filter(id => !byId(id));
+  if (missing.length) {
+    const err = byId('err');
+    err.style.display = 'block';
+    err.textContent = 'Broken paste, missing: ' + missing.join(', ');
+  } else {
+    show(START || 'timer');
+  }
+} catch (e) {
+  const err = byId('err');
+  err.style.display = 'block';
+  err.textContent = 'Boot error: ' + e.message;
+}
 </script>
 </body>
 </html>
