@@ -1,8 +1,8 @@
 /**
  * Slides Unblocked
- * Owned by OwenCosta — https://github.com/OwenCosta/SlidesUnblocked
+ * Owned by OwenCosta - https://github.com/OwenCosta/SlidesUnblocked
  *
- * MIT License — Copyright (c) 2026 OwenCosta
+ * MIT License - Copyright (c) 2026 OwenCosta
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -331,7 +331,7 @@ function playVideo(id, title) {
     slide.insertVideo('https://www.youtube.com/watch?v=' + id, left, top, vw, vh);
     slide.selectAsCurrentPage();
 
-    /* getSlideNumber() is not always available — derive from position */
+    /* getSlideNumber() is not available here, so derive it from position */
     const ids = pres.getSlides().map(function (s) { return s.getObjectId(); });
     const n = ids.indexOf(slide.getObjectId()) + 1;
 
@@ -348,9 +348,9 @@ function diag() {
   function probe(name, fn) {
     try {
       const r = fn();
-      out.push((r.ok ? 'OK    ' : 'FAIL  ') + name + '  —  ' + r.detail);
+      out.push((r.ok ? 'OK    ' : 'FAIL  ') + name + '  -  ' + r.detail);
     } catch (e) {
-      out.push('ERROR ' + name + '  —  ' + e.message);
+      out.push('ERROR ' + name + '  -  ' + e.message);
     }
   }
 
