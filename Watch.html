@@ -5,11 +5,11 @@
   *{box-sizing:border-box}
   body{margin:0;font:13px system-ui,-apple-system,sans-serif;background:#fff;color:#202124}
   header{display:flex;gap:6px;padding:8px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap}
-  input[type=text]{flex:1;min-width:160px;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px}
+  input[type=text]{flex:1;min-width:150px;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px}
   select,button{padding:6px 10px;border:1px solid #ccc;background:#f5f5f5;border-radius:4px;
                 cursor:pointer;font-size:12px;color:inherit}
   button:hover{background:#e8eaed}
-  #status{font-size:11px;color:#666;padding:5px 8px;min-height:15px}
+  #status{font-size:11px;color:#666;padding:5px 8px;min-height:15px;word-break:break-word}
   #stage{position:relative;padding-top:56.25%;background:#000;display:none;overflow:hidden}
   #stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
   #stage.theater{position:fixed;inset:0;padding-top:0;z-index:99}
@@ -20,7 +20,7 @@
         align-items:center;justify-content:center;color:#eee;font-size:13px;text-align:center;padding:20px}
   #bar{display:none;gap:6px;padding:6px 8px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap;background:#fafafa}
   #bar.show{display:flex}
-  #results{max-height:200px;overflow-y:auto;padding:4px 8px 8px}
+  #results{max-height:190px;overflow-y:auto;padding:4px 8px 8px}
   .card{display:flex;gap:8px;padding:6px;border-radius:4px;cursor:pointer;border:1px solid transparent}
   .card:hover{background:#f1f3f4;border-color:#dadce0}
   .thumb{width:76px;flex:0 0 76px;aspect-ratio:16/9;background:#e8eaed;border-radius:3px;overflow:hidden}
@@ -32,15 +32,16 @@
   .chip{font-size:11px;padding:3px 8px;border:1px solid #dadce0;border-radius:12px;
         cursor:pointer;max-width:190px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:#fff}
   h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5f6368;margin:8px 8px 4px}
+  pre{font-size:11px;white-space:pre-wrap;background:#f5f5f5;border:1px solid #e0e0e0;
+      border-radius:4px;margin:6px 8px;padding:8px;max-height:150px;overflow:auto}
 </style>
 </head>
 <body>
 <header>
   <input id="q" type="text" placeholder="Search, or paste a video / shorts URL">
   <button id="go">Search</button>
-  <select id="src">
-    <option value="auto">Auto source</option>
-  </select>
+  <select id="src"><option value="auto">Auto source</option></select>
+  <button id="diagBtn" title="Test connections">?</button>
 </header>
 <div id="status">Ready.</div>
 <div id="stage"></div>
@@ -56,6 +57,7 @@
 <div class="chips" id="saved"></div>
 <h2>Recent</h2>
 <div class="chips" id="recent"></div>
+<pre id="diagOut" style="display:none"></pre>
 <div id="results"></div>
 <script>
 const SOURCES = [
@@ -71,6 +73,7 @@ const stage = document.getElementById('stage');
 const results = document.getElementById('results');
 const bar = document.getElementById('bar');
 const srcSel = document.getElementById('src');
+const diagOut = document.getElementById('diagOut');
 
 let cur = null, idx = 0, timer = null, locked = false;
 
@@ -116,9 +119,7 @@ function load() {
   f.onload = () => { clearTimeout(timer); status('Playing via ' + s.n); };
   stage.appendChild(f);
   status('Loading via ' + s.n + '\u2026');
-  timer = setTimeout(() => {
-    if (!locked) { idx++; load(); }
-  }, 6500);
+  timer = setTimeout(() => { if (!locked) { idx++; load(); } }, 6500);
 }
 
 function popout() {
@@ -158,10 +159,10 @@ function paintChips(k, el) {
 
 function pushRecent(v) {
   const a = readLS('su_recent').filter(x => x.id !== v.id);
-  a.unshift(v); writeLS('su_recent', a); paintChips('su_recent', document.getElementById('recent'));
+  a.unshift(v);
+  writeLS('su_recent', a);
+  paintChips('su_recent', document.getElementById('recent'));
 }
-
-document.getElementById('saved').id = 'saved';
 
 document.getElementById('go').onclick = () => {
   const raw = document.getElementById('q').value.trim();
@@ -170,19 +171,41 @@ document.getElementById('go').onclick = () => {
   if (id) { play(id); return; }
   status('Searching\u2026');
   results.innerHTML = '';
+  diagOut.style.display = 'none';
   google.script.run
     .withSuccessHandler(list => {
-      if (!list || !list.length) { status('No results. Paste a direct link instead.'); return; }
+      if (!list || !list.length) {
+        status('No results. Paste a direct link instead, or hit ? to test connections.');
+        return;
+      }
       status(list.length + ' results');
       list.forEach(v => results.appendChild(card(v)));
     })
-    .withFailureHandler(() => status('Search failed.'))
+    .withFailureHandler(err => {
+      const m = err && err.message ? err.message : String(err);
+      status('Search failed: ' + m + ' — hit ? to test connections.');
+      if (/permission|authoriz/i.test(m)) {
+        status('Search failed: not authorized yet. Run "Slides Unblocked \u2192 Authorize / diagnose", accept the prompt, then search again.');
+      }
+    })
     .searchVideos(raw);
 };
 
 document.getElementById('q').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('go').click();
 });
+
+document.getElementById('diagBtn').onclick = () => {
+  diagOut.style.display = 'block';
+  diagOut.textContent = 'Testing\u2026';
+  google.script.run
+    .withSuccessHandler(lines => { diagOut.textContent = lines.join('\n'); })
+    .withFailureHandler(err => {
+      diagOut.textContent = 'Diagnostics failed: ' + (err && err.message ? err.message : err) +
+        '\n\nNot authorized yet — run "Slides Unblocked \u2192 Authorize / diagnose".';
+    })
+    .diag();
+};
 
 document.getElementById('full').onclick = () => {
   if (document.fullscreenElement) return document.exitFullscreen();
@@ -197,7 +220,8 @@ document.getElementById('pop').onclick = popout;
 document.getElementById('save').onclick = () => {
   if (!cur) return;
   const a = readLS('su_saved').filter(x => x.id !== cur.id);
-  a.unshift(cur); writeLS('su_saved', a);
+  a.unshift(cur);
+  writeLS('su_saved', a);
   paintChips('su_saved', document.getElementById('saved'));
   status('Saved.');
 };
@@ -212,7 +236,8 @@ document.getElementById('copy').onclick = () => {
 
 srcSel.onchange = () => {
   if (srcSel.value === 'auto') { locked = false; return; }
-  locked = true; idx = Number(srcSel.value);
+  locked = true;
+  idx = Number(srcSel.value);
   if (cur) load();
 };
 
