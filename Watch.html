@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
-  Slides Unblocked — Watch
-  Owned by OwenCosta — https://github.com/OwenCosta/SlidesUnblocked
+  Slides Unblocked - Watch
+  Owned by OwenCosta - https://github.com/OwenCosta/SlidesUnblocked
   MIT License, Copyright (c) 2026 OwenCosta
 -->
 <html>
@@ -11,7 +11,7 @@ window.onerror = function (m, s, l) {
   var e = document.getElementById('status');
   if (e) {
     e.style.color = '#c62828';
-    e.textContent = 'Script error: ' + m + ' (line ' + l + ') — paste likely truncated';
+    e.textContent = 'Script error: ' + m + ' (line ' + l + '), paste likely truncated';
   }
 };
 </script>
@@ -43,11 +43,11 @@ window.onerror = function (m, s, l) {
 </head>
 <body>
 <header>
-  <input id="q" type="text" placeholder="Search a video — or paste a link">
+  <input id="q" type="text" placeholder="Search a video, or paste a link">
   <button id="go">Search</button>
   <button id="diagBtn" title="Test connections">?</button>
 </header>
-<div id="status">Starting…</div>
+<div id="status">Starting...</div>
 <h2>Saved</h2>
 <div class="chips" id="saved"></div>
 <h2>Recent</h2>
@@ -143,7 +143,7 @@ function serverSearch(q) {
   });
 }
 
-/* insert retried — the channel is often cold on the first call */
+/* the insert is retried because the channel is often cold on the first call */
 function serverPlay(id, title) {
   return new Promise(resolve => {
     let tries = 0;
@@ -168,13 +168,13 @@ function vidOf(x) {
 }
 
 async function play(v) {
-  say('Putting "' + (v.title || v.id) + '" on the player slide…');
+  say('Putting "' + (v.title || v.id) + '" on the player slide...');
   const r = await serverPlay(v.id, v.title || '');
   if (r && r.ok) {
     say('Playing on slide ' + r.n + '. Hit present.');
     setTimeout(() => { try { google.script.host.close(); } catch (e) {} }, 700);
   } else {
-    say('Insert failed: ' + ((r && r.msg) || 'unknown') + ' — reopen the dialog and retry.', true);
+    say('Insert failed: ' + ((r && r.msg) || 'unknown') + '. Reopen the dialog and retry.', true);
   }
 }
 
@@ -201,7 +201,7 @@ function render(list) {
     say('No results. Try different words, or paste a link.');
     return;
   }
-  say(list.length + ' results — click one to play it.');
+  say(list.length + ' results. Click one to play it.');
   list.forEach(v => resultsEl.appendChild(card(v)));
 }
 
@@ -238,17 +238,17 @@ async function doSearch() {
 
   diagOut.style.display = 'none';
   resultsEl.innerHTML = '';
-  say('Searching…');
+  say('Searching...');
 
   const local = await searchHere(raw);
   if (local.length) { render(local); return; }
 
-  say('Direct search unavailable, trying the server…');
+  say('Direct search unavailable, trying the server...');
   const res = await serverSearch(raw);
   if (Array.isArray(res) && res.length) { render(res); return; }
 
   const why = res && res.err ? res.err : 'empty response';
-  say('Search failed: ' + why + ' — hit ? for diagnostics.', true);
+  say('Search failed: ' + why + '. Hit ? for diagnostics.', true);
 }
 
 bind('go', 'click', doSearch);
@@ -256,9 +256,9 @@ bind('q', 'keydown', e => { if (e.key === 'Enter') doSearch(); });
 
 bind('diagBtn', 'click', async () => {
   diagOut.style.display = 'block';
-  diagOut.textContent = 'Browser path…';
+  diagOut.textContent = 'Browser path...';
   const local = await searchHere('music');
-  diagOut.textContent = 'browser search: ' + local.length + ' results\nServer path…';
+  diagOut.textContent = 'browser search: ' + local.length + ' results\nServer path...';
   const res = await serverSearch('music');
   if (Array.isArray(res)) {
     diagOut.textContent += ' ' + res.length + ' results\n\n';
@@ -278,7 +278,7 @@ try {
   const need = ['q','go','status','results','saved','recent','diagOut','diagBtn'];
   const missing = need.filter(id => !byId(id));
   if (missing.length) {
-    say('Broken paste — missing: ' + missing.join(', '), true);
+    say('Broken paste, missing: ' + missing.join(', '), true);
   } else {
     paintChips('su_saved', byId('saved'));
     paintChips('su_recent', byId('recent'));
@@ -292,7 +292,7 @@ try {
     (async () => {
       const probe = await searchHere('music');
       if (probe.length) say('Ready. Self-test: ' + probe.length + ' results. Search a video.');
-      else say('Ready. Self-test found nothing — search may need the server. Hit ? if unsure.');
+      else say('Ready. Self-test found nothing, search may need the server. Hit ? if unsure.');
     })();
   }
 } catch (e) {
