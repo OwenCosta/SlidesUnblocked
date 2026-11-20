@@ -367,7 +367,7 @@ function diag() {
     return { ok: r.getResponseCode() === 200, detail: 'HTTP ' + r.getResponseCode() };
   });
 
-  probe('youtubei', function () {
+  probe('youtubei search', function () {
     const r = UrlFetchApp.fetch(
       'https://youtubei.googleapis.com/youtubei/v1/search?key=' + YT_KEY,
       {
@@ -381,14 +381,28 @@ function diag() {
     return { ok: r.getResponseCode() === 200 && n > 0, detail: 'HTTP ' + r.getResponseCode() + ', ' + n + ' hits' };
   });
 
+  probe('youtubei browse', function () {
+    const r = UrlFetchApp.fetch(
+      'https://youtubei.googleapis.com/youtubei/v1/browse?key=' + YT_KEY,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ context: { client: SEARCH_CLIENTS[0] }, browseId: 'UC_x5XG1OV2P6uZZ5FSM9Ttw' }),
+        muteHttpExceptions: true
+      }
+    );
+    const n = (r.getContentText().match(/"videoId"/g) || []).length;
+    return { ok: r.getResponseCode() === 200 && n > 0, detail: 'HTTP ' + r.getResponseCode() + ', ' + n + ' items' };
+  });
+
   probe('storage', function () {
     setProp_('diag_ping', 'x');
     return { ok: prop_('diag_ping') === 'x', detail: 'read/write ' + (prop_('diag_ping') === 'x' ? 'ok' : 'blocked') };
   });
 
   probe('search pipeline', function () {
-    const n = searchVideos('music').length;
-    return { ok: n > 0, detail: n + ' results' };
+    const r = searchVideos('music');
+    return { ok: r.videos.length > 0, detail: r.videos.length + ' videos, ' + r.channels.length + ' channels' };
   });
 
   probe('player slide', function () {
@@ -412,8 +426,16 @@ function textOf_(n) {
   return '';
 }
 
+function thumbOf_(n) {
+  try {
+    const t = n && n.thumbnails;
+    if (!t || !t.length) return '';
+    return t[t.length - 1].url || '';
+  } catch (e) { return ''; }
+}
+
 function collectVideos_(node, out) {
-  if (!node || typeof node !== 'object' || out.length >= 20) return;
+  if (!node || typeof node !== 'object' || out.length >= 30) return;
   if (Array.isArray(node)) {
     for (let i = 0; i < node.length; i++) collectVideos_(node[i], out);
     return;
@@ -425,7 +447,9 @@ function collectVideos_(node, out) {
         id: node.videoId,
         title: t,
         author: textOf_(node.ownerText) || textOf_(node.longBylineText) || textOf_(node.shortBylineText) || '',
-        length: (node.lengthText && node.lengthText.simpleText) || ''
+        length: (node.lengthText && node.lengthText.simpleText) || '',
+        views: textOf_(node.viewCountText) || (node.shortViewCountText && node.shortViewCountText.simpleText) || '',
+        age: textOf_(node.publishedTimeText) || ''
       });
       return;
     }
@@ -436,7 +460,32 @@ function collectVideos_(node, out) {
   }
 }
 
+function collectChannels_(node, out) {
+  if (!node || typeof node !== 'object' || out.length >= 10) return;
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) collectChannels_(node[i], out);
+    return;
+  }
+  const c = node.channelRenderer;
+  if (c && c.channelId) {
+    out.push({
+      id: c.channelId,
+      title: textOf_(c.title),
+      subs: textOf_(c.subscriberCountText) || textOf_(c.videoCountText) || '',
+      avatar: thumbOf_(c.thumbnail)
+    });
+    return;
+  }
+  for (const k in node) {
+    const v = node[k];
+    if (v && typeof v === 'object') collectChannels_(v, out);
+  }
+}
+
 function innerTube_(q) {
+  const videos = [];
+  const channels = [];
+
   for (let i = 0; i < SEARCH_CLIENTS.length; i++) {
     try {
       const r = UrlFetchApp.fetch(
@@ -449,18 +498,59 @@ function innerTube_(q) {
         }
       );
       if (r.getResponseCode() !== 200) continue;
-      const out = [];
-      collectVideos_(JSON.parse(r.getContentText()), out);
-      if (out.length) return out;
+      const d = JSON.parse(r.getContentText());
+      collectVideos_(d, videos);
+      collectChannels_(d, channels);
+      if (videos.length || channels.length) break;
     } catch (e) {}
   }
-  return [];
+
+  return { videos: videos, channels: channels };
+}
+
+function dedupe_(list, key) {
+  const seen = {};
+  return list.filter(function (x) {
+    const k = x && x[key];
+    if (!k || seen[k]) return false;
+    seen[k] = 1;
+    return true;
+  });
 }
 
 function searchVideos(q) {
-  const seen = {};
-  innerTube_(q).forEach(function (v) {
-    if (v && v.id && !seen[v.id]) seen[v.id] = v;
-  });
-  return Object.keys(seen).map(function (k) { return seen[k]; }).slice(0, 20);
+  const r = innerTube_(q);
+  return {
+    videos: dedupe_(r.videos, 'id').slice(0, 24),
+    channels: dedupe_(r.channels, 'id').slice(0, 8)
+  };
+}
+
+/* uploads for one channel */
+function channelVideos(channelId) {
+  if (!channelId) return { videos: [], title: '' };
+
+  for (let i = 0; i < SEARCH_CLIENTS.length; i++) {
+    try {
+      const r = UrlFetchApp.fetch(
+        'https://youtubei.googleapis.com/youtubei/v1/browse?key=' + YT_KEY,
+        {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify({ context: { client: SEARCH_CLIENTS[i] }, browseId: channelId }),
+          muteHttpExceptions: true
+        }
+      );
+      if (r.getResponseCode() !== 200) continue;
+      const d = JSON.parse(r.getContentText());
+      const videos = [];
+      collectVideos_(d, videos);
+      if (videos.length) {
+        let title = '';
+        try { title = textOf_(d.header.pageHeaderRenderer.title); } catch (e) {}
+        return { videos: dedupe_(videos, 'id').slice(0, 24), title: title };
+      }
+    } catch (e) {}
+  }
+  return { videos: [], title: '' };
 }
