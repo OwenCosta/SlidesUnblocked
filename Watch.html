@@ -61,12 +61,81 @@
 <div id="results"></div>
 <script>
 const SOURCES = [
-  {n: 'Piped',      u: id => 'https://piped.video/embed/' + id + '?autoplay=1'},
-  {n: 'Invidious',  u: id => 'https://inv.nadeko.net/embed/' + id + '?autoplay=1'},
-  {n: 'Yewtu.be',   u: id => 'https://yewtu.be/embed/' + id + '?autoplay=1'},
-  {n: 'No-cookie',  u: id => 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0&modestbranding=1'},
-  {n: 'YouTube',    u: id => 'https://www.youtube.com/embed/' + id + '?autoplay=1&rel=0'}
+  {n: 'Piped',         u: id => 'https://piped.video/embed/' + id + '?autoplay=1'},
+  {n: 'Invidious A',   u: id => 'https://inv.nadeko.net/embed/' + id + '?autoplay=1'},
+  {n: 'Invidious B',   u: id => 'https://invidious.nerdvpn.de/embed/' + id + '?autoplay=1'},
+  {n: 'Yewtu.be',      u: id => 'https://yewtu.be/embed/' + id + '?autoplay=1'},
+  {n: 'No-cookie',     u: id => 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0&modestbranding=1'},
+  {n: 'YouTube',       u: id => 'https://www.youtube.com/embed/' + id + '?autoplay=1&rel=0'}
 ];
+
+/* public InnerTube key — same one youtube.com ships in its own pages */
+const YT_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+const CLIENTS = [
+  {clientName: 'WEB', clientVersion: '2.20241126.01.00', hl: 'en', gl: 'US'},
+  {clientName: 'MWEB', clientVersion: '2.20241126.01.00', hl: 'en', gl: 'US'},
+  {clientName: 'ANDROID', clientVersion: '19.45.36', androidSdkVersion: 30, hl: 'en', gl: 'US'}
+];
+
+function textOf(n) {
+  if (!n) return '';
+  if (n.simpleText) return n.simpleText;
+  if (n.runs) return n.runs.map(r => r.text).join('');
+  return '';
+}
+
+function collect(node, out) {
+  if (!node || typeof node !== 'object' || out.length >= 20) return;
+  if (Array.isArray(node)) { node.forEach(n => collect(n, out)); return; }
+  if (node.videoId && (node.title || node.headline)) {
+    const t = textOf(node.title) || textOf(node.headline);
+    if (t) {
+      out.push({
+        id: node.videoId,
+        title: t,
+        author: textOf(node.ownerText) || textOf(node.longBylineText) || textOf(node.shortBylineText) || '',
+        length: (node.lengthText && node.lengthText.simpleText) || ''
+      });
+      return;
+    }
+  }
+  for (const k in node) if (node[k] && typeof node[k] === 'object') collect(node[k], out);
+}
+
+/* text/plain keeps it a simple request — no CORS preflight */
+async function searchHere(q) {
+  for (const c of CLIENTS) {
+    try {
+      const r = await fetch('https://youtubei.googleapis.com/youtubei/v1/search?key=' + YT_KEY, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain;charset=UTF-8'},
+        body: JSON.stringify({context: {client: c}, query: q})
+      });
+      if (!r.ok) continue;
+      const out = [];
+      collect(await r.json(), out);
+      if (out.length) return out;
+    } catch (e) {}
+  }
+  return [];
+}
+
+function serverSearch(q) {
+  return new Promise(resolve => {
+    let tries = 0;
+    const run = () => {
+      tries++;
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err => {
+          if (tries < 3) { setTimeout(run, 400); return; }
+          resolve({ err: err && err.message ? err.message : String(err) });
+        })
+        .searchVideos(q);
+    };
+    run();
+  });
+}
 
 const statusEl = document.getElementById('status');
 const stage = document.getElementById('stage');
@@ -140,6 +209,16 @@ function card(v) {
   return d;
 }
 
+function render(list) {
+  results.innerHTML = '';
+  if (!list || !list.length) {
+    status('No results. Paste a direct link instead, or hit ? to test connections.');
+    return;
+  }
+  status(list.length + ' results');
+  list.forEach(v => results.appendChild(card(v)));
+}
+
 function readLS(k) {
   try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; }
 }
@@ -164,47 +243,56 @@ function pushRecent(v) {
   paintChips('su_recent', document.getElementById('recent'));
 }
 
-document.getElementById('go').onclick = () => {
+/* server (retried) → browser → message */
+document.getElementById('go').onclick = async () => {
   const raw = document.getElementById('q').value.trim();
   if (!raw) return;
   const id = vidOf(raw);
   if (id) { play(id); return; }
-  status('Searching\u2026');
-  results.innerHTML = '';
+
   diagOut.style.display = 'none';
-  google.script.run
-    .withSuccessHandler(list => {
-      if (!list || !list.length) {
-        status('No results. Paste a direct link instead, or hit ? to test connections.');
-        return;
-      }
-      status(list.length + ' results');
-      list.forEach(v => results.appendChild(card(v)));
-    })
-    .withFailureHandler(err => {
-      const m = err && err.message ? err.message : String(err);
-      status('Search failed: ' + m + ' — hit ? to test connections.');
-      if (/permission|authoriz/i.test(m)) {
-        status('Search failed: not authorized yet. Run "Slides Unblocked \u2192 Authorize / diagnose", accept the prompt, then search again.');
-      }
-    })
-    .searchVideos(raw);
+  results.innerHTML = '';
+  status('Searching\u2026');
+
+  const res = await serverSearch(raw);
+  if (Array.isArray(res) && res.length) { render(res); return; }
+
+  const local = await searchHere(raw);
+  if (local.length) { render(local); return; }
+
+  if (res && res.err) {
+    if (/permission|storage/i.test(res.err)) {
+      status('Server link down (' + res.err + '). Browser search also blocked. ' +
+        'Run Updates \u2192 Toggle page source to files, reopen, retry.');
+    } else {
+      status('Search failed: ' + res.err);
+    }
+  } else {
+    status('No results from either path. Paste a direct link, or hit ? for diagnostics.');
+  }
 };
 
 document.getElementById('q').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('go').click();
 });
 
-document.getElementById('diagBtn').onclick = () => {
+document.getElementById('diagBtn').onclick = async () => {
   diagOut.style.display = 'block';
-  diagOut.textContent = 'Testing\u2026';
-  google.script.run
-    .withSuccessHandler(lines => { diagOut.textContent = lines.join('\n'); })
-    .withFailureHandler(err => {
-      diagOut.textContent = 'Diagnostics failed: ' + (err && err.message ? err.message : err) +
-        '\n\nNot authorized yet — run "Slides Unblocked \u2192 Authorize / diagnose".';
-    })
-    .diag();
+  diagOut.textContent = 'Browser path\u2026';
+  const local = await searchHere('music');
+  diagOut.textContent = 'browser search: ' + local.length + ' results\nServer path\u2026';
+  const res = await serverSearch('music');
+  if (Array.isArray(res)) {
+    diagOut.textContent += ' ' + res.length + ' results\n\n';
+    google.script.run
+      .withSuccessHandler(lines => { diagOut.textContent += lines.join('\n'); })
+      .withFailureHandler(err => {
+        diagOut.textContent += 'diag() failed: ' + (err && err.message ? err.message : err);
+      })
+      .diag();
+  } else {
+    diagOut.textContent += ' failed: ' + (res && res.err ? res.err : 'unknown');
+  }
 };
 
 document.getElementById('full').onclick = () => {
@@ -243,6 +331,9 @@ srcSel.onchange = () => {
 
 paintChips('su_saved', document.getElementById('saved'));
 paintChips('su_recent', document.getElementById('recent'));
+</script>
+</body>
+</html>
 </script>
 </body>
 </html>
