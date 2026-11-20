@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  Slides Unblocked - Watch
+  Slides Unblocked - Search
   Owned by OwenCosta - https://github.com/OwenCosta/SlidesUnblocked
   MIT License, Copyright (c) 2026 OwenCosta
 -->
@@ -23,37 +23,69 @@ window.onerror = function (m, s, l) {
   button{padding:7px 11px;border:1px solid #ccc;background:#f5f5f5;border-radius:4px;
          cursor:pointer;font-size:12px;color:inherit}
   button:hover{background:#e8eaed}
+  #filters{display:flex;gap:6px;padding:0 8px 8px;flex-wrap:wrap;align-items:center}
+  #filters .grp{display:flex;gap:4px;border:1px solid #dadce0;border-radius:14px;padding:2px}
+  #filters .grp button{border:0;background:none;border-radius:12px;padding:3px 9px;font-size:11px;color:#5f6368}
+  #filters .grp button.on{background:#1a73e8;color:#fff}
+  #filters select{font-size:11px;padding:4px 6px;border:1px solid #dadce0;border-radius:12px;color:#5f6368}
   #status{font-size:11px;color:#666;padding:5px 8px;min-height:15px;word-break:break-word}
-  #results{max-height:330px;overflow-y:auto;padding:4px 8px 8px}
+  #channels{display:flex;gap:10px;overflow-x:auto;padding:0 8px 8px}
+  .chan{display:flex;flex-direction:column;align-items:center;gap:4px;width:82px;
+        cursor:pointer;flex:0 0 82px;text-align:center}
+  .chan img{width:46px;height:46px;border-radius:50%;background:#e8eaed;object-fit:cover}
+  .chan span{font-size:11px;line-height:1.2;max-height:27px;overflow:hidden;color:#202124}
+  .chan i{font-size:10px;color:#80868b;font-style:normal}
+  #results{max-height:300px;overflow-y:auto;padding:4px 8px 8px}
   .card{display:flex;gap:8px;padding:6px;border-radius:4px;cursor:pointer;border:1px solid transparent}
   .card:hover{background:#f1f3f4;border-color:#dadce0}
-  .thumb{width:76px;flex:0 0 76px;aspect-ratio:16/9;background:#e8eaed;border-radius:3px;overflow:hidden}
+  .thumb{width:76px;flex:0 0 76px;aspect-ratio:16/9;background:#e8eaed;border-radius:3px;overflow:hidden;position:relative}
   .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb b{position:absolute;right:2px;bottom:2px;background:rgba(0,0,0,.8);color:#fff;
+           font-size:10px;padding:1px 3px;border-radius:2px;font-weight:500}
   .meta{flex:1;min-width:0;font-size:12px;line-height:1.35}
   .meta b{display:block;font-weight:500;max-height:34px;overflow:hidden}
   .meta i{display:block;font-style:normal;font-size:11px;color:#5f6368;margin-top:2px}
   .chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 8px 8px}
   .chip{font-size:11px;padding:3px 8px;border:1px solid #dadce0;border-radius:12px;
         cursor:pointer;max-width:190px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:#fff}
-  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5f6368;margin:8px 8px 4px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5f6368;margin:8px 8px 4px;
+     display:flex;justify-content:space-between;align-items:center}
+  h2 button{font-size:10px;padding:2px 7px;text-transform:none;letter-spacing:0}
   pre{font-size:11px;white-space:pre-wrap;background:#f5f5f5;border:1px solid #e0e0e0;
       border-radius:4px;margin:6px 8px;padding:8px;max-height:150px;overflow:auto}
   .credit{font-size:10px;color:#80868b;padding:0 8px 8px}
+  .hidden{display:none !important}
 </style>
 </head>
 <body>
 <header>
-  <input id="q" type="text" placeholder="Search a video, or paste a link">
+  <input id="q" type="text" placeholder="Search videos, channels, anything">
   <button id="go">Search</button>
   <button id="diagBtn" title="Test connections">?</button>
 </header>
+<div id="filters">
+  <div class="grp" id="durGrp">
+    <button data-dur="any" class="on">Any length</button>
+    <button data-dur="short">Under 4 min</button>
+    <button data-dur="med">4 to 20</button>
+    <button data-dur="long">Over 20</button>
+  </div>
+  <select id="sort">
+    <option value="rel">Best match</option>
+    <option value="new">Newest</option>
+    <option value="views">Most viewed</option>
+  </select>
+</div>
 <div id="status">Starting...</div>
-<h2>Saved</h2>
+<div id="channels"></div>
+<div class="chips" id="queries"></div>
+<h2><span id="resTitle">Results</span><button id="back" class="hidden">Back to search</button></h2>
+<pre id="diagOut" style="display:none"></pre>
+<div id="results"></div>
+<h2 id="savedH">Saved</h2>
 <div class="chips" id="saved"></div>
 <h2>Recent</h2>
 <div class="chips" id="recent"></div>
-<pre id="diagOut" style="display:none"></pre>
-<div id="results"></div>
 <div class="credit">Slides Unblocked · OwenCosta · github.com/OwenCosta/SlidesUnblocked</div>
 <script>
 const YT_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
@@ -67,6 +99,12 @@ const byId = id => document.getElementById(id);
 const statusEl = byId('status');
 const resultsEl = byId('results');
 const diagOut = byId('diagOut');
+const channelsEl = byId('channels');
+
+let dur = 'any';
+let sortMode = 'rel';
+let rawVideos = [];
+let inChannel = null;
 
 function say(t, bad) {
   if (!statusEl) return;
@@ -91,22 +129,46 @@ function textOf(n) {
   return '';
 }
 
-function collect(node, out) {
-  if (!node || typeof node !== 'object' || out.length >= 20) return;
-  if (Array.isArray(node)) { node.forEach(n => collect(n, out)); return; }
+function collect(node, vids, chans) {
+  if (!node || typeof node !== 'object' || vids.length >= 30) return;
+  if (Array.isArray(node)) { node.forEach(n => collect(n, vids, chans)); return; }
+
+  const c = node.channelRenderer;
+  if (c && c.channelId) {
+    const th = c.thumbnail && c.thumbnail.thumbnails;
+    chans.push({
+      id: c.channelId,
+      title: textOf(c.title),
+      subs: textOf(c.subscriberCountText) || textOf(c.videoCountText) || '',
+      avatar: th && th.length ? th[th.length - 1].url : ''
+    });
+    return;
+  }
   if (node.videoId && (node.title || node.headline)) {
     const t = textOf(node.title) || textOf(node.headline);
     if (t) {
-      out.push({
+      vids.push({
         id: node.videoId,
         title: t,
         author: textOf(node.ownerText) || textOf(node.longBylineText) || textOf(node.shortBylineText) || '',
-        length: (node.lengthText && node.lengthText.simpleText) || ''
+        length: (node.lengthText && node.lengthText.simpleText) || '',
+        views: textOf(node.viewCountText) || (node.shortViewCountText && node.shortViewCountText.simpleText) || '',
+        age: textOf(node.publishedTimeText) || ''
       });
       return;
     }
   }
-  for (const k in node) if (node[k] && typeof node[k] === 'object') collect(node[k], out);
+  for (const k in node) if (node[k] && typeof node[k] === 'object') collect(node[k], vids, chans);
+}
+
+function dedupe(list, key) {
+  const seen = {};
+  return list.filter(x => {
+    const k = x && x[key];
+    if (!k || seen[k]) return false;
+    seen[k] = 1;
+    return true;
+  });
 }
 
 async function searchHere(q) {
@@ -118,12 +180,15 @@ async function searchHere(q) {
         body: JSON.stringify({context: {client: c}, query: q})
       });
       if (!r.ok) continue;
-      const out = [];
-      collect(await r.json(), out);
-      if (out.length) return out;
+      const d = await r.json();
+      const vids = [], chans = [];
+      collect(d, vids, chans);
+      if (vids.length || chans.length) {
+        return { videos: dedupe(vids, 'id').slice(0, 24), channels: dedupe(chans, 'id').slice(0, 8) };
+      }
     } catch (e) {}
   }
-  return [];
+  return { videos: [], channels: [] };
 }
 
 function serverSearch(q) {
@@ -143,7 +208,6 @@ function serverSearch(q) {
   });
 }
 
-/* the insert is retried because the channel is often cold on the first call */
 function serverPlay(id, title) {
   return new Promise(resolve => {
     let tries = 0;
@@ -161,6 +225,94 @@ function serverPlay(id, title) {
   });
 }
 
+function serverChannel(id) {
+  return new Promise(resolve => {
+    google.script.run
+      .withSuccessHandler(r => resolve(r || { videos: [], title: '' }))
+      .withFailureHandler(() => resolve({ videos: [], title: '' }))
+      .channelVideos(id);
+  });
+}
+
+/* ---------------- parsing for sort and filter ---------------- */
+function secsOf(len) {
+  const p = String(len || '').split(':').map(Number);
+  if (!p.length || p.some(isNaN)) return 0;
+  return p.reduce((a, b) => a * 60 + b, 0);
+}
+
+function viewsOf(s) {
+  const m = String(s || '').replace(/[,\s]/g, '').match(/([\d.]+)([KMB])?/i);
+  if (!m) return 0;
+  const mult = {K: 1e3, M: 1e6, B: 1e9}[(m[2] || '').toUpperCase()] || 1;
+  return Math.round(parseFloat(m[1]) * mult);
+}
+
+function ageOf(s) {
+  const m = String(s || '').match(/(\d+)\s*(second|minute|hour|day|week|month|year)/i);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  const unit = {
+    second: 1, minute: 60, hour: 3600, day: 86400,
+    week: 604800, month: 2592000, year: 31536000
+  }[m[2].toLowerCase()];
+  return Number(m[1]) * unit;
+}
+
+function applyView() {
+  let list = rawVideos.slice();
+
+  if (dur !== 'any') {
+    list = list.filter(v => {
+      const s = secsOf(v.length);
+      if (!s) return true;
+      if (dur === 'short') return s < 240;
+      if (dur === 'med') return s >= 240 && s <= 1200;
+      return s > 1200;
+    });
+  }
+
+  if (sortMode === 'new') list.sort((a, b) => ageOf(a.age) - ageOf(b.age));
+  else if (sortMode === 'views') list.sort((a, b) => viewsOf(b.views) - viewsOf(a.views));
+
+  resultsEl.innerHTML = '';
+  if (!list.length) {
+    say(rawVideos.length ? 'Nothing matches that length filter.' : 'No results. Try other words, or paste a link.');
+    return;
+  }
+  say(list.length + ' results. Click one to play it.');
+  list.forEach(v => resultsEl.appendChild(card(v)));
+}
+
+function card(v) {
+  const d = document.createElement('div');
+  d.className = 'card';
+  d.innerHTML = '<div class="thumb"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id +
+    '/mqdefault.jpg"><b></b></div><div class="meta"><b></b><i></i></div>';
+  const img = d.querySelector('.thumb img');
+  img.onerror = function () { this.parentNode.style.display = 'none'; };
+  const len = d.querySelector('.thumb b');
+  if (v.length) len.textContent = v.length;
+  d.querySelector('.meta b').textContent = v.title;
+  d.querySelector('.meta i').textContent =
+    [v.author, v.views, v.age].filter(Boolean).join(' · ');
+  d.onclick = () => playTracked(v);
+  return d;
+}
+
+function chanCard(c) {
+  const d = document.createElement('div');
+  d.className = 'chan';
+  d.innerHTML = '<img loading="lazy"><span></span><i></i>';
+  const img = d.querySelector('img');
+  if (c.avatar) img.src = c.avatar;
+  img.onerror = function () { this.style.visibility = 'hidden'; };
+  d.querySelector('span').textContent = c.title;
+  d.querySelector('i').textContent = c.subs;
+  d.onclick = () => openChannel(c);
+  return d;
+}
+
+/* ---------------- actions ---------------- */
 function vidOf(x) {
   const m = x.match(/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
   if (m) return m[1];
@@ -183,41 +335,46 @@ function playTracked(v) {
   play(v);
 }
 
-function card(v) {
-  const d = document.createElement('div');
-  d.className = 'card';
-  d.innerHTML = '<div class="thumb"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id +
-    '/mqdefault.jpg"></div><div class="meta"><b></b><i></i></div>';
-  d.querySelector('img').onerror = function () { this.parentNode.style.display = 'none'; };
-  d.querySelector('b').textContent = v.title;
-  d.querySelector('i').textContent = [v.author, v.length].filter(Boolean).join(' · ');
-  d.onclick = () => playTracked(v);
-  return d;
-}
-
-function render(list) {
+async function openChannel(c) {
+  inChannel = c;
+  byId('resTitle').textContent = c.title || 'Channel';
+  byId('back').classList.remove('hidden');
   resultsEl.innerHTML = '';
-  if (!list || !list.length) {
-    say('No results. Try different words, or paste a link.');
+  channelsEl.innerHTML = '';
+  say('Loading channel...');
+
+  const r = await serverChannel(c.id);
+  rawVideos = r.videos || [];
+  if (!rawVideos.length) {
+    say('That channel returned no videos.');
     return;
   }
-  say(list.length + ' results. Click one to play it.');
-  list.forEach(v => resultsEl.appendChild(card(v)));
+  applyView();
 }
 
+function backToSearch() {
+  inChannel = null;
+  byId('resTitle').textContent = 'Results';
+  byId('back').classList.add('hidden');
+  rawVideos = [];
+  resultsEl.innerHTML = '';
+  say('Ready.');
+}
+
+/* ---------------- history ---------------- */
 function readLS(k) {
   try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; }
 }
 function writeLS(k, a) { localStorage.setItem(k, JSON.stringify(a.slice(0, 25))); }
 
-function paintChips(k, elm) {
+function paintChips(k, elm, onClick) {
   elm.innerHTML = '';
   readLS(k).forEach(v => {
     const c = document.createElement('div');
     c.className = 'chip';
-    c.textContent = v.title || v.id;
-    c.title = v.title || v.id;
-    c.onclick = () => playTracked(v);
+    c.textContent = typeof v === 'string' ? v : (v.title || v.id);
+    c.title = c.textContent;
+    c.onclick = () => onClick(v);
     elm.appendChild(c);
   });
 }
@@ -226,9 +383,20 @@ function pushRecent(v) {
   const a = readLS('su_recent').filter(x => x.id !== v.id);
   a.unshift(v);
   writeLS('su_recent', a);
-  paintChips('su_recent', byId('recent'));
+  paintChips('su_recent', byId('recent'), x => playTracked(x));
 }
 
+function pushQuery(q) {
+  const a = readLS('su_queries').filter(x => x !== q);
+  a.unshift(q);
+  writeLS('su_queries', a);
+  paintChips('su_queries', byId('queries'), x => {
+    byId('q').value = x;
+    doSearch();
+  });
+}
+
+/* ---------------- search flow ---------------- */
 async function doSearch() {
   const raw = byId('q').value.trim();
   if (!raw) { byId('q').focus(); say('Type something to search.'); return; }
@@ -236,63 +404,112 @@ async function doSearch() {
   const id = vidOf(raw);
   if (id) { playTracked({id: id, title: ''}); return; }
 
+  inChannel = null;
+  byId('resTitle').textContent = 'Results';
+  byId('back').classList.add('hidden');
   diagOut.style.display = 'none';
   resultsEl.innerHTML = '';
+  channelsEl.innerHTML = '';
+  rawVideos = [];
   say('Searching...');
 
   const local = await searchHere(raw);
-  if (local.length) { render(local); return; }
+  let res = local;
 
-  say('Direct search unavailable, trying the server...');
-  const res = await serverSearch(raw);
-  if (Array.isArray(res) && res.length) { render(res); return; }
+  if (!res.videos.length && !res.channels.length) {
+    say('Direct search unavailable, trying the server...');
+    const s = await serverSearch(raw);
+    if (Array.isArray(s)) res = { videos: s, channels: [] };
+    else if (s && s.videos) res = s;
+    else {
+      say('Search failed: ' + (s && s.err ? s.err : 'empty response') + '. Hit ? for diagnostics.', true);
+      return;
+    }
+  }
 
-  const why = res && res.err ? res.err : 'empty response';
-  say('Search failed: ' + why + '. Hit ? for diagnostics.', true);
+  pushQuery(raw);
+
+  if (res.channels.length) {
+    res.channels.forEach(c => channelsEl.appendChild(chanCard(c)));
+  }
+
+  rawVideos = res.videos;
+  if (!rawVideos.length) {
+    say(res.channels.length ? 'Channels found. Click one, or try other words.' : 'No results.');
+    return;
+  }
+  applyView();
 }
 
 bind('go', 'click', doSearch);
 bind('q', 'keydown', e => { if (e.key === 'Enter') doSearch(); });
+bind('back', 'click', backToSearch);
+
+bind('sort', 'change', () => {
+  sortMode = byId('sort').value;
+  if (rawVideos.length) applyView();
+});
+
+const durBtns = document.querySelectorAll('#durGrp button');
+for (let i = 0; i < durBtns.length; i++) {
+  durBtns[i].onclick = () => {
+    dur = durBtns[i].dataset.dur;
+    for (let j = 0; j < durBtns.length; j++) {
+      durBtns[j].classList.toggle('on', durBtns[j] === durBtns[i]);
+    }
+    if (rawVideos.length) applyView();
+  };
+}
 
 bind('diagBtn', 'click', async () => {
   diagOut.style.display = 'block';
   diagOut.textContent = 'Browser path...';
   const local = await searchHere('music');
-  diagOut.textContent = 'browser search: ' + local.length + ' results\nServer path...';
+  diagOut.textContent = 'browser search: ' + local.videos.length + ' videos, ' + local.channels.length + ' channels\nServer path...';
   const res = await serverSearch('music');
   if (Array.isArray(res)) {
-    diagOut.textContent += ' ' + res.length + ' results\n\n';
+    diagOut.textContent += ' ' + res.length + ' videos\n\n';
     google.script.run
       .withSuccessHandler(lines => { diagOut.textContent += lines.join('\n'); })
       .withFailureHandler(err => {
         diagOut.textContent += 'diag() failed: ' + (err && err.message ? err.message : err);
       })
       .diag();
+  } else if (res && res.videos) {
+    diagOut.textContent += ' ' + res.videos.length + ' videos, ' + res.channels.length + ' channels\n\n';
+    google.script.run
+      .withSuccessHandler(lines => { diagOut.textContent += lines.join('\n'); })
+      .diag();
   } else {
     diagOut.textContent += ' failed: ' + (res && res.err ? res.err : 'unknown');
   }
 });
 
-/* boot: warm the channel, then self-test search */
+/* boot */
 try {
-  const need = ['q','go','status','results','saved','recent','diagOut','diagBtn'];
+  const need = ['q','go','status','results','saved','recent','queries','channels','diagOut',
+                'diagBtn','sort','durGrp','resTitle','back'];
   const missing = need.filter(id => !byId(id));
   if (missing.length) {
     say('Broken paste, missing: ' + missing.join(', '), true);
   } else {
-    paintChips('su_saved', byId('saved'));
-    paintChips('su_recent', byId('recent'));
+    paintChips('su_saved', byId('saved'), x => playTracked(x));
+    paintChips('su_recent', byId('recent'), x => playTracked(x));
+    paintChips('su_queries', byId('queries'), x => {
+      byId('q').value = x;
+      doSearch();
+    });
     byId('q').focus();
 
-    google.script.run
-      .withSuccessHandler(() => {})
-      .withFailureHandler(() => {})
-      .ping();
+    google.script.run.withSuccessHandler(() => {}).withFailureHandler(() => {}).ping();
 
     (async () => {
       const probe = await searchHere('music');
-      if (probe.length) say('Ready. Self-test: ' + probe.length + ' results. Search a video.');
-      else say('Ready. Self-test found nothing, search may need the server. Hit ? if unsure.');
+      if (probe.videos.length) {
+        say('Ready. Self-test: ' + probe.videos.length + ' videos. Search something.');
+      } else {
+        say('Ready. Self-test found nothing, search may need the server. Hit ? if unsure.');
+      }
     })();
   }
 } catch (e) {
