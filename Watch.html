@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head><base target="_top">
+<script>
+window.onerror = function (m, s, l) {
+  var el = document.getElementById('status');
+  if (el) {
+    el.style.color = '#c62828';
+    el.textContent = 'Script error: ' + m + ' (line ' + l + ') — paste likely truncated';
+  }
+};
+</script>
 <style>
   *{box-sizing:border-box}
   body{margin:0;font:13px system-ui,-apple-system,sans-serif;background:#fff;color:#202124}
@@ -43,7 +52,7 @@
   <button id="go">Search</button>
   <button id="diagBtn" title="Test connections">?</button>
 </header>
-<div id="status">Ready.</div>
+<div id="status">Loading\u2026</div>
 <div id="stage"></div>
 <div id="bar">
   <button id="full">Fullscreen</button>
@@ -80,7 +89,6 @@ const DOMAINS = [
   {n: 'YouTube',   host: 'https://www.youtube.com/embed/'}
 ];
 
-/* stream fallback — serves the media file, so 151 videos still play */
 const STREAM = [
   'https://inv.nadeko.net/latest_version',
   'https://invidious.nerdvpn.de/latest_version',
@@ -94,6 +102,31 @@ const CLIENTS = [
   {clientName: 'MWEB', clientVersion: '2.20241126.01.00', hl: 'en', gl: 'US'},
   {clientName: 'ANDROID', clientVersion: '19.45.36', androidSdkVersion: 30, hl: 'en', gl: 'US'}
 ];
+
+const el = id => document.getElementById(id);
+const statusEl = el('status');
+const stage = el('stage');
+const results = el('results');
+const bar = el('bar');
+const glSel = el('gl');
+const itagSel = el('itag');
+const diagOut = el('diagOut');
+
+let cur = null, mode = 'embed', dIdx = 0, sIdx = 0, itag = '18', timer = null;
+
+function status(t, bad) {
+  if (!statusEl) return;
+  statusEl.style.color = bad ? '#c62828' : '#666';
+  statusEl.textContent = t;
+}
+
+function on(id, ev, fn) {
+  const n = el(id);
+  if (!n) return;
+  n.addEventListener(ev, e => {
+    try { fn(e); } catch (err) { status('Error: ' + err.message, true); }
+  });
+}
 
 function textOf(n) {
   if (!n) return '';
@@ -154,33 +187,6 @@ function serverSearch(q) {
   });
 }
 
-const statusEl = document.getElementById('status');
-const stage = document.getElementById('stage');
-const results = document.getElementById('results');
-const bar = document.getElementById('bar');
-const glSel = document.getElementById('gl');
-const itagSel = document.getElementById('itag');
-const diagOut = document.getElementById('diagOut');
-
-let cur = null, mode = 'embed', dIdx = 0, sIdx = 0, itag = '18', timer = null;
-
-glSel.value = localStorage.getItem('su_gl') || 'US';
-itag = localStorage.getItem('su_itag') || '18';
-itagSel.value = itag;
-
-glSel.onchange = () => {
-  localStorage.setItem('su_gl', glSel.value);
-  if (cur) load();
-};
-itagSel.onchange = () => {
-  itag = itagSel.value;
-  localStorage.setItem('su_itag', itag);
-  sIdx = 0;
-  if (cur && mode === 'stream') loadStream();
-};
-
-const status = t => statusEl.textContent = t;
-
 function vidOf(x) {
   const m = x.match(/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
   if (m) return m[1];
@@ -189,14 +195,8 @@ function vidOf(x) {
 
 function buildUrl(id, domainIdx) {
   const p = new URLSearchParams({
-    autoplay: '1',
-    rel: '0',
-    modestbranding: '1',
-    playsinline: '1',
-    iv_load_policy: '3',
-    fs: '1',
-    hl: 'en',
-    enablejsapi: '1'
+    autoplay: '1', rel: '0', modestbranding: '1', playsinline: '1',
+    iv_load_policy: '3', fs: '1', hl: 'en', enablejsapi: '1'
   });
   const gl = localStorage.getItem('su_gl');
   if (gl) p.set('gl', gl);
@@ -229,7 +229,7 @@ function load() {
   f.setAttribute('allowfullscreen', '');
   f.onload = () => {
     clearTimeout(timer);
-    status('Playing via ' + d.n + '. Error 151 or blank? It switches to the stream by itself.');
+    status('Playing via ' + d.n + '. A 151 will switch to the stream on its own.');
   };
   stage.appendChild(f);
   status('Loading via ' + d.n + '\u2026');
@@ -254,12 +254,13 @@ function loadStream() {
   if (sIdx >= STREAM.length) {
     if (itag !== '18') {
       itag = '18';
-      itagSel.value = '18';
+      if (itagSel) itagSel.value = '18';
       sIdx = 0;
       return loadStream();
     }
     stage.innerHTML = '<div class="fail"><span>No stream instance answered.</span>' +
-      '<button onclick="popout()">Open in a new tab</button></div>';
+      '<button id="failPop">Open in a new tab</button></div>';
+    on('failPop', 'click', popout);
     status('Stream fallback exhausted. Try Pop out.');
     return;
   }
@@ -276,10 +277,7 @@ function loadStream() {
   v.playsInline = true;
   v.src = url;
   v.onerror = () => { sIdx++; loadStream(); };
-  v.onloadedmetadata = () => {
-    status('Direct stream via ' + host.split('/')[2] + ' (' + itag + '). ' +
-      'No captions or quality menu here.');
-  };
+  v.onloadedmetadata = () => status('Direct stream via ' + host.split('/')[2] + ' (' + itag + ').');
   stage.appendChild(v);
   status('Stream ' + (sIdx + 1) + '/' + STREAM.length + '\u2026');
 }
@@ -291,21 +289,6 @@ function popout() {
     : buildUrl(cur.id, dIdx);
   window.open(url, '_blank', 'noopener');
 }
-
-/* catch 101 / 150 / 151 from the player itself */
-window.addEventListener('message', e => {
-  if (!/youtube(-nocookie)?\.com$/.test(String(e.origin).replace(/^https?:\/\//, ''))) return;
-  let d;
-  try { d = JSON.parse(e.data); } catch (err) { return; }
-  if (!d || d.event !== 'onError') return;
-  if (d.info === 101 || d.info === 150 || d.info === 151) {
-    startStream('Embedding disabled (error ' + d.info + ')');
-  } else if (d.info === 100) {
-    status('Video is private or removed.');
-  } else if (d.info === 2) {
-    status('Bad video id.');
-  }
-});
 
 function card(v) {
   const d = document.createElement('div');
@@ -334,15 +317,15 @@ function readLS(k) {
 }
 function writeLS(k, a) { localStorage.setItem(k, JSON.stringify(a.slice(0, 25))); }
 
-function paintChips(k, el) {
-  el.innerHTML = '';
+function paintChips(k, elm) {
+  elm.innerHTML = '';
   readLS(k).forEach(v => {
     const c = document.createElement('div');
     c.className = 'chip';
     c.textContent = v.title || v.id;
     c.title = v.title || v.id;
     c.onclick = () => play(v.id, v.title);
-    el.appendChild(c);
+    elm.appendChild(c);
   });
 }
 
@@ -350,12 +333,13 @@ function pushRecent(v) {
   const a = readLS('su_recent').filter(x => x.id !== v.id);
   a.unshift(v);
   writeLS('su_recent', a);
-  paintChips('su_recent', document.getElementById('recent'));
+  paintChips('su_recent', el('recent'));
 }
 
-document.getElementById('go').onclick = async () => {
-  const raw = document.getElementById('q').value.trim();
-  if (!raw) return;
+/* ---------------- wiring ---------------- */
+on('go', 'click', async () => {
+  const raw = el('q').value.trim();
+  if (!raw) { status('Type something first.'); return; }
   const id = vidOf(raw);
   if (id) { play(id); return; }
 
@@ -369,18 +353,13 @@ document.getElementById('go').onclick = async () => {
   const local = await searchHere(raw);
   if (local.length) { render(local); return; }
 
-  if (res && res.err) {
-    status('Search failed: ' + res.err + ' — hit ? for diagnostics.');
-  } else {
-    status('No results from either path. Paste a direct link instead.');
-  }
-};
-
-document.getElementById('q').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('go').click();
+  if (res && res.err) status('Search failed: ' + res.err + ' — hit ? for diagnostics.', true);
+  else status('No results from either path. Paste a direct link instead.');
 });
 
-document.getElementById('diagBtn').onclick = async () => {
+on('q', 'keydown', e => { if (e.key === 'Enter') el('go').click(); });
+
+on('diagBtn', 'click', async () => {
   diagOut.style.display = 'block';
   diagOut.textContent = 'Browser path\u2026';
   const local = await searchHere('music');
@@ -397,40 +376,86 @@ document.getElementById('diagBtn').onclick = async () => {
   } else {
     diagOut.textContent += ' failed: ' + (res && res.err ? res.err : 'unknown');
   }
-};
+});
 
-document.getElementById('full').onclick = () => {
+on('full', 'click', () => {
   if (document.fullscreenElement) return document.exitFullscreen();
   const fn = stage.requestFullscreen || stage.webkitRequestFullscreen;
   if (fn) fn.call(stage).catch(popout); else popout();
-};
+});
 
-document.getElementById('theater').onclick = () => stage.classList.toggle('theater');
-document.getElementById('retry').onclick = () => load();
-document.getElementById('stream').onclick = () => { sIdx = 0; startStream('Manual'); };
-document.getElementById('next').onclick = () => {
+on('theater', 'click', () => stage.classList.toggle('theater'));
+on('retry', 'click', () => load());
+on('stream', 'click', () => { sIdx = 0; startStream('Manual'); });
+on('next', 'click', () => {
   if (mode === 'stream') { sIdx++; loadStream(); return; }
   dIdx = dIdx === 0 ? 1 : 0;
   load();
-};
-document.getElementById('pop').onclick = popout;
+});
+on('pop', 'click', popout);
 
-document.getElementById('save').onclick = () => {
+on('save', 'click', () => {
   if (!cur) return;
   const a = readLS('su_saved').filter(x => x.id !== cur.id);
   a.unshift(cur);
   writeLS('su_saved', a);
-  paintChips('su_saved', document.getElementById('saved'));
+  paintChips('su_saved', el('saved'));
   status('Saved.');
-};
+});
 
-document.getElementById('copy').onclick = () => {
+on('copy', 'click', () => {
   if (!cur) return;
   const url = 'https://youtu.be/' + cur.id;
   navigator.clipboard.writeText(url)
     .then(() => status('Copied ' + url))
     .catch(() => status(url));
-};
+});
+
+on('gl', 'change', () => {
+  localStorage.setItem('su_gl', glSel.value);
+  if (cur) load();
+});
+
+on('itag', 'change', () => {
+  itag = itagSel.value;
+  localStorage.setItem('su_itag', itag);
+  sIdx = 0;
+  if (cur && mode === 'stream') loadStream();
+});
+
+window.addEventListener('message', e => {
+  if (!/youtube(-nocookie)?\.com$/.test(String(e.origin).replace(/^https?:\/\//, ''))) return;
+  let d;
+  try { d = JSON.parse(e.data); } catch (err) { return; }
+  if (!d || d.event !== 'onError') return;
+  if (d.info === 101 || d.info === 150 || d.info === 151) startStream('Embedding disabled (' + d.info + ')');
+  else if (d.info === 100) status('Video is private or removed.', true);
+  else if (d.info === 2) status('Bad video id.', true);
+});
+
+/* ---------------- boot check ---------------- */
+try {
+  const need = ['q','go','stage','bar','results','gl','itag','diagOut','saved','recent',
+                'full','theater','retry','next','stream','pop','save','copy','diagBtn'];
+  const missing = need.filter(id => !el(id));
+  if (missing.length) {
+    status('Broken paste — missing: ' + missing.join(', '), true);
+  } else {
+    try { glSel.value = localStorage.getItem('su_gl') || 'US'; } catch (e) {}
+    try {
+      itag = localStorage.getItem('su_itag') || '18';
+      itagSel.value = itag;
+    } catch (e) {}
+    paintChips('su_saved', el('saved'));
+    paintChips('su_recent', el('recent'));
+    status('Ready.');
+  }
+} catch (e) {
+  status('Boot error: ' + e.message, true);
+}
+</script>
+</body>
+</html>
 
 paintChips('su_saved', document.getElementById('saved'));
 paintChips('su_recent', document.getElementById('recent'));
